@@ -121,6 +121,7 @@ const Dashboard = () => {
     { icon: Plane, label: 'Planner', path: '/planner', color: 'from-purple-500 to-pink-500' },
     { icon: FileText, label: 'My Bookings', path: '/my-bookings', color: 'from-indigo-500 to-blue-500' },
     { icon: Receipt, label: 'My Receipts', path: '/my-receipts', color: 'from-emerald-500 to-green-500' },
+    { icon: TrendingUp, label: 'Trip History', path: '/trip-history', color: 'from-sky-500 to-blue-600' },
     { icon: ListChecks, label: 'Checklist', path: '/checklist', color: 'from-orange-500 to-red-500' },
     { icon: User, label: 'Profile', path: '/profile', color: 'from-green-500 to-teal-500' }
   ];

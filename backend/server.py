@@ -119,6 +119,9 @@ class BookingModel(Base):
     total_price = Column(Float, default=0)
     currency = Column(String(10), default="INR")
     booking_ref = Column(String(50), unique=True, index=True, nullable=False)
+    status = Column(String(20), default="Confirmed")  # Confirmed / Cancelled / Completed
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class GalleryPostModel(Base):
@@ -150,6 +153,20 @@ class PaymentReceiptModel(Base):
     payment_method = Column(String(50), nullable=False)
     amount = Column(Float, nullable=False)
     receipt_url = Column(String(500), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class ChecklistItemModel(Base):
+    __tablename__ = "checklist_items"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), index=True, nullable=True)
+    booking_id = Column(String(36), index=True, nullable=True)
+    trip_id = Column(String(36), index=True, nullable=True)
+    item_name = Column(String(255), nullable=False)
+    category = Column(String(100), nullable=True)  # e.g., Clothing, Documents, Toiletries, etc.
+    is_packed = Column(Integer, default=0)  # 0 = not packed, 1 = packed
+    is_auto_generated = Column(Integer, default=0)  # 0 = user added, 1 = auto-suggested
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -290,6 +307,7 @@ class Booking(BaseModel):
     total_price: float
     currency: str
     booking_ref: str
+    status: str = "Confirmed"
     created_at: datetime
 
 class BookingCreate(BaseModel):
@@ -363,10 +381,110 @@ class ReceiptRecord(BaseModel):
     receipt_url: str
     created_at: datetime
 
+class ChecklistItem(BaseModel):
+    id: str
+    booking_id: Optional[str] = None
+    trip_id: Optional[str] = None
+    item_name: str
+    category: Optional[str] = None
+    is_packed: bool
+    is_auto_generated: bool
+    created_at: datetime
+
+class ChecklistItemCreate(BaseModel):
+    booking_id: Optional[str] = None
+    trip_id: Optional[str] = None
+    item_name: str
+    category: Optional[str] = None
+
+class BookingStatusUpdate(BaseModel):
+    status: str  # Confirmed / Cancelled / Completed
+
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
     return {"message": "Hello World"}
+
+# Smart packing checklist templates
+PACKING_TEMPLATES = {
+    "Beach": {
+        "Clothing": ["Swimwear", "Beach cover-up", "Shorts", "T-shirts", "Sandals", "Sun hat", "Sunglasses"],
+        "Toiletries": ["Sunscreen SPF 50+", "After-sun lotion", "Lip balm with SPF", "Waterproof phone case"],
+        "Accessories": ["Beach towel", "Beach bag", "Snorkeling gear", "Flip flops"],
+        "Essentials": ["Passport", "Tickets", "Hotel booking", "Travel insurance", "Cash/Cards"]
+    },
+    "Mountain": {
+        "Clothing": ["Warm jacket", "Thermal wear", "Gloves", "Woolen cap", "Hiking boots", "Thick socks", "Waterproof pants"],
+        "Toiletries": ["Moisturizer", "Lip balm", "Hand cream", "Sunscreen", "First aid kit"],
+        "Accessories": ["Backpack", "Trekking pole", "Water bottle", "Flashlight", "Power bank"],
+        "Essentials": ["Passport", "Tickets", "Hotel booking", "Travel insurance", "Cash/Cards", "Emergency contacts"]
+    },
+    "Heritage": {
+        "Clothing": ["Comfortable walking shoes", "Light jacket", "Modest clothing", "Scarf/shawl", "Sun hat"],
+        "Toiletries": ["Sunscreen", "Hand sanitizer", "Wet wipes", "Basic medicines"],
+        "Accessories": ["Camera", "Guidebook", "Daypack", "Water bottle", "Notebook"],
+        "Essentials": ["Passport", "Tickets", "Hotel booking", "Travel insurance", "Cash/Cards", "Museum passes"]
+    },
+    "Adventure": {
+        "Clothing": ["Quick-dry clothes", "Sports shoes", "Cap", "Sunglasses", "Rain jacket", "Extra socks"],
+        "Toiletries": ["Sunscreen", "Insect repellent", "First aid kit", "Energy bars", "Electrolyte powder"],
+        "Accessories": ["GoPro/Action camera", "Headlamp", "Multi-tool", "Dry bag", "Portable charger"],
+        "Essentials": ["Passport", "Tickets", "Activity bookings", "Travel insurance", "Emergency contact", "Maps"]
+    },
+    "Urban": {
+        "Clothing": ["Casual wear", "Comfortable shoes", "Light jacket", "Accessories for photos"],
+        "Toiletries": ["Travel-size toiletries", "Hand sanitizer", "Wet wipes", "Basic medicines"],
+        "Accessories": ["Phone charger", "Power bank", "Camera", "Day bag", "Reusable water bottle"],
+        "Essentials": ["Passport", "Tickets", "Hotel booking", "Travel card/pass", "City map/app"]
+    },
+    "Default": {
+        "Clothing": ["Comfortable clothes", "Shoes", "Light jacket", "Undergarments", "Socks"],
+        "Toiletries": ["Toothbrush", "Toothpaste", "Soap", "Shampoo", "Deodorant", "Sunscreen"],
+        "Accessories": ["Phone charger", "Power bank", "Headphones", "Books/e-reader"],
+        "Essentials": ["Passport", "Tickets", "Hotel booking", "Travel insurance", "Cash", "Credit cards"]
+    }
+}
+
+def _detect_destination_category(destination: str) -> str:
+    """Detect category from destination name or return Default."""
+    dest_lower = destination.lower()
+    # Beach destinations
+    if any(word in dest_lower for word in ['goa', 'beach', 'maldives', 'bali', 'phuket', 'coast', 'island']):
+        return "Beach"
+    # Mountain destinations
+    if any(word in dest_lower for word in ['kashmir', 'mountain', 'himalaya', 'nepal', 'manali', 'shimla', 'ladakh', 'ski']):
+        return "Mountain"
+    # Heritage destinations
+    if any(word in dest_lower for word in ['rome', 'paris', 'egypt', 'petra', 'heritage', 'delhi', 'agra', 'jaipur', 'rajasthan']):
+        return "Heritage"
+    # Adventure destinations
+    if any(word in dest_lower for word in ['adventure', 'safari', 'jungle', 'rishikesh', 'queenstown', 'interlaken']):
+        return "Adventure"
+    # Urban destinations
+    if any(word in dest_lower for word in ['tokyo', 'new york', 'london', 'dubai', 'singapore', 'city', 'urban', 'mumbai']):
+        return "Urban"
+    return "Default"
+
+def _generate_checklist_for_booking(booking_id: str, destination: str, db: Session) -> List[str]:
+    """Auto-generate smart packing checklist items based on destination."""
+    category = _detect_destination_category(destination)
+    template = PACKING_TEMPLATES.get(category, PACKING_TEMPLATES["Default"])
+    
+    item_ids = []
+    for cat, items in template.items():
+        for item_name in items:
+            item = ChecklistItemModel(
+                user_id=None,  # TODO: associate with current user
+                booking_id=booking_id,
+                item_name=item_name,
+                category=cat,
+                is_auto_generated=1
+            )
+            db.add(item)
+            db.flush()
+            item_ids.append(item.id)
+    db.commit()
+    return item_ids
 
 def _mask_credential(method: str, credential: str) -> str:
     try:
@@ -857,10 +975,18 @@ async def create_booking(payload: BookingCreate, db: Session = Depends(get_db)):
         total_price=payload.total_price,
         currency=payload.currency,
         booking_ref=booking_ref,
+        status="Confirmed",
     )
     db.add(booking)
     db.commit()
     db.refresh(booking)
+    
+    # Auto-generate smart packing checklist
+    try:
+        _generate_checklist_for_booking(booking.id, booking.destination, db)
+    except Exception as e:
+        logger.warning(f"Failed to generate checklist for booking {booking.id}: {e}")
+    
     return Booking(
         id=booking.id,
         destination=booking.destination,
@@ -873,12 +999,16 @@ async def create_booking(payload: BookingCreate, db: Session = Depends(get_db)):
         total_price=booking.total_price,
         currency=booking.currency,
         booking_ref=booking.booking_ref,
+        status=booking.status,
         created_at=booking.created_at,
     )
 
 @api_router.get("/bookings", response_model=List[Booking])
-async def list_bookings(db: Session = Depends(get_db)):
-    rows = db.query(BookingModel).order_by(BookingModel.created_at.desc()).all()
+async def list_bookings(status: Optional[str] = None, db: Session = Depends(get_db)):
+    query = db.query(BookingModel)
+    if status:
+        query = query.filter(BookingModel.status == status)
+    rows = query.order_by(BookingModel.created_at.desc()).all()
     return [
         Booking(
             id=r.id,
@@ -892,6 +1022,7 @@ async def list_bookings(db: Session = Depends(get_db)):
             total_price=r.total_price,
             currency=r.currency,
             booking_ref=r.booking_ref,
+            status=r.status,
             created_at=r.created_at,
         ) for r in rows
     ]
@@ -904,6 +1035,104 @@ async def delete_booking(booking_id: str, db: Session = Depends(get_db)):
     db.delete(r)
     db.commit()
     return {"message": "Booking deleted"}
+
+@api_router.put("/bookings/{booking_id}/status", response_model=Booking)
+async def update_booking_status(booking_id: str, payload: BookingStatusUpdate, db: Session = Depends(get_db)):
+    r = db.query(BookingModel).filter(BookingModel.id == booking_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if payload.status not in ["Confirmed", "Cancelled", "Completed"]:
+        raise HTTPException(status_code=400, detail="Invalid status. Must be Confirmed, Cancelled, or Completed.")
+    
+    r.status = payload.status
+    if payload.status == "Cancelled":
+        r.cancelled_at = datetime.now(timezone.utc)
+    elif payload.status == "Completed":
+        r.completed_at = datetime.now(timezone.utc)
+    
+    db.commit()
+    db.refresh(r)
+    
+    return Booking(
+        id=r.id,
+        destination=r.destination,
+        start_date=r.start_date,
+        end_date=r.end_date,
+        travelers=r.travelers,
+        package_type=r.package_type,
+        hotel_name=r.hotel_name,
+        flight_number=r.flight_number,
+        total_price=r.total_price,
+        currency=r.currency,
+        booking_ref=r.booking_ref,
+        status=r.status,
+        created_at=r.created_at,
+    )
+
+# Checklist endpoints
+@api_router.post("/checklist/items", response_model=ChecklistItem)
+async def create_checklist_item(payload: ChecklistItemCreate, db: Session = Depends(get_db)):
+    item = ChecklistItemModel(
+        user_id=None,  # TODO: associate with current user
+        booking_id=payload.booking_id,
+        trip_id=payload.trip_id,
+        item_name=payload.item_name,
+        category=payload.category,
+        is_auto_generated=0
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return ChecklistItem(
+        id=item.id,
+        booking_id=item.booking_id,
+        trip_id=item.trip_id,
+        item_name=item.item_name,
+        category=item.category,
+        is_packed=bool(item.is_packed),
+        is_auto_generated=bool(item.is_auto_generated),
+        created_at=item.created_at,
+    )
+
+@api_router.get("/checklist/items", response_model=List[ChecklistItem])
+async def list_checklist_items(booking_id: Optional[str] = None, trip_id: Optional[str] = None, db: Session = Depends(get_db)):
+    query = db.query(ChecklistItemModel)
+    if booking_id:
+        query = query.filter(ChecklistItemModel.booking_id == booking_id)
+    if trip_id:
+        query = query.filter(ChecklistItemModel.trip_id == trip_id)
+    rows = query.order_by(ChecklistItemModel.category, ChecklistItemModel.item_name).all()
+    return [
+        ChecklistItem(
+            id=r.id,
+            booking_id=r.booking_id,
+            trip_id=r.trip_id,
+            item_name=r.item_name,
+            category=r.category,
+            is_packed=bool(r.is_packed),
+            is_auto_generated=bool(r.is_auto_generated),
+            created_at=r.created_at,
+        ) for r in rows
+    ]
+
+@api_router.put("/checklist/items/{item_id}")
+async def toggle_checklist_item(item_id: str, db: Session = Depends(get_db)):
+    r = db.query(ChecklistItemModel).filter(ChecklistItemModel.id == item_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Checklist item not found")
+    r.is_packed = 1 if r.is_packed == 0 else 0
+    db.commit()
+    return {"id": r.id, "is_packed": bool(r.is_packed)}
+
+@api_router.delete("/checklist/items/{item_id}")
+async def delete_checklist_item(item_id: str, db: Session = Depends(get_db)):
+    r = db.query(ChecklistItemModel).filter(ChecklistItemModel.id == item_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Checklist item not found")
+    db.delete(r)
+    db.commit()
+    return {"message": "Checklist item deleted"}
 
 # Gallery endpoints
 @api_router.post("/gallery", response_model=GalleryPost)
@@ -1203,6 +1432,26 @@ logger = logging.getLogger(__name__)
 def on_startup():
     # Create tables if not exist
     Base.metadata.create_all(bind=engine)
+    # Best-effort schema migrations for added columns
+    try:
+        with engine.connect() as conn:
+            # Add status column if missing
+            try:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN status VARCHAR(20) DEFAULT 'Confirmed'"))
+            except Exception:
+                pass
+            # Add cancelled_at column if missing
+            try:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN cancelled_at DATETIME NULL"))
+            except Exception:
+                pass
+            # Add completed_at column if missing
+            try:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN completed_at DATETIME NULL"))
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"Schema migration checks failed: {e}")
     logger.info("Database tables created/verified successfully")
 
 

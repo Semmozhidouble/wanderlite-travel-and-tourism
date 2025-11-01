@@ -7,7 +7,7 @@ import Footer from "./components/Footer";
 import Home from "./pages/Home";
 import Explore from "./pages/Explore";
 import TripPlanner from "./pages/TripPlanner";
-import Checklist from "./pages/Checklist";
+import Checklist from "./pages/ChecklistNew";
 import Contact from "./pages/Contact";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -19,6 +19,7 @@ import Payment from "./pages/Payment";
 import Receipt from "./pages/Receipt";
 import MyBookings from "./pages/MyBookings";
 import MyReceipts from "./pages/MyReceipts";
+import TripHistory from "./pages/TripHistory";
 
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
@@ -71,6 +72,7 @@ function App() {
             <Route path="/receipt" element={<Receipt />} />
             <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
             <Route path="/my-receipts" element={<ProtectedRoute><MyReceipts /></ProtectedRoute>} />
+            <Route path="/trip-history" element={<ProtectedRoute><TripHistory /></ProtectedRoute>} />
           </Routes>
           <Footer />
           <Toaster />

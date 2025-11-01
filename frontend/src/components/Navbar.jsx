@@ -74,6 +74,23 @@ const Navbar = () => {
                 )}
               </Link>
             ))}
+            {isAuthenticated && (
+              <Link
+                to="/trip-history"
+                className={`text-sm font-medium transition-all duration-200 relative ${
+                  isActive('/trip-history')
+                    ? 'text-[#0077b6]'
+                    : scrolled
+                    ? 'text-gray-700 hover:text-[#0077b6]'
+                    : 'text-gray-800 hover:text-[#0077b6]'
+                }`}
+              >
+                Trip History
+                {isActive('/trip-history') && (
+                  <span className="absolute -bottom-1 left-0 w-full h-0.5 bg-gradient-to-r from-[#0077b6] to-[#48cae4] rounded-full" />
+                )}
+              </Link>
+            )}
           </div>
 
           {/* Auth Section */}
@@ -90,6 +107,12 @@ const Navbar = () => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem asChild>
+                    <Link to="/trip-history" className="flex items-center space-x-2">
+                      <Compass className="w-4 h-4" />
+                      <span>Trip History</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
                     <Link to="/dashboard" className="flex items-center space-x-2">
                       <User className="w-4 h-4" />
                       <span>Dashboard</span>
@@ -99,6 +122,18 @@ const Navbar = () => {
                     <Link to="/profile" className="flex items-center space-x-2">
                       <User className="w-4 h-4" />
                       <span>Profile</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/my-bookings" className="flex items-center space-x-2">
+                      <Compass className="w-4 h-4" />
+                      <span>My Bookings</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/my-receipts" className="flex items-center space-x-2">
+                      <Compass className="w-4 h-4" />
+                      <span>My Receipts</span>
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
@@ -160,6 +195,35 @@ const Navbar = () => {
               {link.name}
             </Link>
           ))}
+          {isAuthenticated && (
+            <>
+              <Link
+                to="/trip-history"
+                onClick={() => setIsOpen(false)}
+                className={`block px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+                  isActive('/trip-history')
+                    ? 'bg-gradient-to-r from-[#0077b6] to-[#48cae4] text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                Trip History
+              </Link>
+              <Link
+                to="/my-bookings"
+                onClick={() => setIsOpen(false)}
+                className="block px-4 py-3 rounded-lg font-medium text-gray-700 hover:bg-gray-100 transition-all duration-200"
+              >
+                My Bookings
+              </Link>
+              <Link
+                to="/my-receipts"
+                onClick={() => setIsOpen(false)}
+                className="block px-4 py-3 rounded-lg font-medium text-gray-700 hover:bg-gray-100 transition-all duration-200"
+              >
+                My Receipts
+              </Link>
+            </>
+          )}
 
           {/* Mobile Auth */}
           <div className="border-t border-gray-200 mt-4 pt-4">

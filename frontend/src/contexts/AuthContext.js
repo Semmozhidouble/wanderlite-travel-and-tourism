@@ -18,10 +18,9 @@ export const AuthProvider = ({ children }) => {
 
   // Set up axios defaults
   useEffect(() => {
-    // Configure base URL from environment
-    if (process.env.REACT_APP_BACKEND_URL) {
-      axios.defaults.baseURL = process.env.REACT_APP_BACKEND_URL;
-    }
+    // Configure base URL from environment (fallback to localhost:8000)
+    const base = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
+    axios.defaults.baseURL = base;
 
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
