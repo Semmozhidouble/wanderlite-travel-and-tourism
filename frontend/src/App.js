@@ -15,6 +15,10 @@ import Profile from "./pages/Profile";
 import Dashboard from "./pages/Dashboard";
 import Gallery from "./pages/Gallery";
 import { Toaster } from "./components/ui/sonner";
+import Payment from "./pages/Payment";
+import Receipt from "./pages/Receipt";
+import MyBookings from "./pages/MyBookings";
+import MyReceipts from "./pages/MyReceipts";
 
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
@@ -63,6 +67,10 @@ function App() {
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/gallery" element={<ProtectedRoute><Gallery /></ProtectedRoute>} />
+            <Route path="/payment" element={<Payment />} />
+            <Route path="/receipt" element={<Receipt />} />
+            <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
+            <Route path="/my-receipts" element={<ProtectedRoute><MyReceipts /></ProtectedRoute>} />
           </Routes>
           <Footer />
           <Toaster />

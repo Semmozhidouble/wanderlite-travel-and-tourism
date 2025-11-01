@@ -15,6 +15,7 @@ import requests
 import json
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
+from fpdf import FPDF
 
 # SQLAlchemy (MySQL via XAMPP)
 from sqlalchemy import (
@@ -130,6 +131,25 @@ class GalleryPostModel(Base):
     location = Column(String(255), nullable=True)
     tags_json = Column(Text, nullable=False, default="[]")
     likes = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class PaymentReceiptModel(Base):
+    __tablename__ = "payment_receipts"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), index=True, nullable=True)  # nullable for guest payments
+    booking_ref = Column(String(50), index=True, nullable=False)
+    destination = Column(String(255), nullable=True)
+    start_date = Column(DateTime(timezone=True), nullable=True)
+    end_date = Column(DateTime(timezone=True), nullable=True)
+    travelers = Column(Integer, nullable=True)
+    full_name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=False)
+    phone = Column(String(50), nullable=False)
+    payment_method = Column(String(50), nullable=False)
+    amount = Column(Float, nullable=False)
+    receipt_url = Column(String(500), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -307,10 +327,172 @@ class Destination(BaseModel):
     attractions: List[str]
     activities: List[str]
 
+# Payment models
+class PaymentRequest(BaseModel):
+    booking_ref: Optional[str] = None
+    destination: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    travelers: Optional[int] = None
+
+    full_name: str
+    email: str
+    phone: str
+    method: str  # Card / UPI / Wallet
+    credential: str  # Card Number / UPI ID / Wallet ID
+    amount: float
+
+class PaymentResponse(BaseModel):
+    status: str
+    booking_ref: str
+    receipt_url: str
+
+
+class ReceiptRecord(BaseModel):
+    id: str
+    booking_ref: str
+    destination: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    travelers: Optional[int] = None
+    full_name: str
+    email: str
+    phone: str
+    payment_method: str
+    amount: float
+    receipt_url: str
+    created_at: datetime
+
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
     return {"message": "Hello World"}
+
+def _mask_credential(method: str, credential: str) -> str:
+    try:
+        m = method.lower()
+        if m == 'card':
+            digits = ''.join(filter(str.isdigit, credential))
+            if len(digits) <= 4:
+                return digits
+            return f"{'*' * (len(digits) - 4)}{digits[-4:]}"
+        if m in ('upi', 'wallet'):
+            parts = credential.split('@', 1)
+            if len(parts) == 2:
+                user, domain = parts
+                return f"{user[:2]}***@{domain}"
+            return credential[:2] + '***' if len(credential) > 2 else credential
+    except Exception:
+        pass
+    return credential
+
+def _generate_receipt_pdf(payload: PaymentRequest, upload_dir: Path) -> str:
+    """Generate a simple payment receipt PDF and return the relative file path under uploads."""
+    receipts_dir = upload_dir / 'receipts'
+    receipts_dir.mkdir(parents=True, exist_ok=True)
+
+    booking_ref = payload.booking_ref or f"WL-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
+    filename = f"receipt_{booking_ref}.pdf"
+    file_path = receipts_dir / filename
+
+    pdf = FPDF()
+    pdf.add_page()
+
+    # Header
+    pdf.set_fill_color(0, 119, 182)  # WanderLite blue
+    pdf.rect(0, 0, 210, 25, 'F')
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font('Arial', 'B', 16)
+    pdf.set_xy(10, 8)
+    pdf.cell(0, 10, 'WanderLite - Payment Receipt', 0, 1, 'L')
+
+    # Body
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', '', 12)
+    pdf.ln(10)
+
+    def row(label: str, value: str):
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(55, 8, label)
+        pdf.set_font('Arial', '', 12)
+        pdf.multi_cell(0, 8, value)
+
+    row('Receipt No.:', booking_ref)
+    row('Date:', datetime.now().strftime('%Y-%m-%d %H:%M'))
+    row('Destination:', payload.destination or '-')
+    sdate = payload.start_date.astimezone(timezone.utc).strftime('%Y-%m-%d') if payload.start_date else '-'
+    edate = payload.end_date.astimezone(timezone.utc).strftime('%Y-%m-%d') if payload.end_date else '-'
+    row('Travel Dates:', f"{sdate} to {edate}")
+    row('Travelers:', str(payload.travelers or '-'))
+    row('Name:', payload.full_name)
+    row('Email:', payload.email)
+    row('Phone:', payload.phone)
+    row('Payment Method:', payload.method)
+    row('Credential:', _mask_credential(payload.method, payload.credential))
+    row('Amount Paid:', f"₹{(payload.amount or 0):,.2f}")
+    row('Status:', 'SUCCESS')
+
+    pdf.ln(6)
+    pdf.set_text_color(100, 100, 100)
+    pdf.set_font('Arial', '', 10)
+    pdf.multi_cell(0, 6, 'This is a system-generated receipt for a simulated payment. For assistance contact support@wanderlite.com')
+
+    pdf.output(str(file_path))
+    return f"/uploads/receipts/{filename}"
+
+@api_router.post("/payment/confirm", response_model=PaymentResponse)
+async def confirm_payment(payload: PaymentRequest, db: Session = Depends(get_db)):
+    try:
+        upload_dir = Path('uploads')
+        upload_dir.mkdir(exist_ok=True)
+        receipt_url = _generate_receipt_pdf(payload, upload_dir)
+        booking_ref = payload.booking_ref or receipt_url.rsplit('receipt_', 1)[-1].replace('.pdf', '')
+        
+        # Save receipt record to database
+        receipt_record = PaymentReceiptModel(
+            user_id=None,  # TODO: link to current user if authenticated
+            booking_ref=booking_ref,
+            destination=payload.destination,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            travelers=payload.travelers,
+            full_name=payload.full_name,
+            email=payload.email,
+            phone=payload.phone,
+            payment_method=payload.method,
+            amount=payload.amount,
+            receipt_url=receipt_url,
+        )
+        db.add(receipt_record)
+        db.commit()
+        
+        return PaymentResponse(status='success', booking_ref=booking_ref, receipt_url=receipt_url)
+    except Exception as e:
+        logger.exception("Payment confirmation failed")
+        raise HTTPException(status_code=500, detail=f"Failed to generate receipt: {e}")
+
+
+@api_router.get("/receipts", response_model=List[ReceiptRecord])
+async def list_receipts(db: Session = Depends(get_db)):
+    """List all payment receipts (for now returns all; TODO: filter by user_id)."""
+    rows = db.query(PaymentReceiptModel).order_by(PaymentReceiptModel.created_at.desc()).all()
+    return [
+        ReceiptRecord(
+            id=r.id,
+            booking_ref=r.booking_ref,
+            destination=r.destination,
+            start_date=r.start_date,
+            end_date=r.end_date,
+            travelers=r.travelers,
+            full_name=r.full_name,
+            email=r.email,
+            phone=r.phone,
+            payment_method=r.payment_method,
+            amount=r.amount,
+            receipt_url=r.receipt_url,
+            created_at=r.created_at,
+        ) for r in rows
+    ]
 
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate, db: Session = Depends(get_db)):

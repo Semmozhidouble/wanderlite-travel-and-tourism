@@ -12,7 +12,23 @@
   - Generates PDF confirmation using jsPDF library
   - Booking reference format: `WL-YYYYMMDD-XXXXXXXX`
 
-### 2. **Gallery / Travel Moments**
+  ### 2. **Checkout & Payment (Fake)**
+  - New route: `/payment`
+  - Flow: Select Destination → Fill Booking Form → Proceed to Payment → Enter Card/UPI/Wallet → Confirm Payment → Generate Receipt (PDF)
+  - Payment form collects:
+    - Full Name (text)
+    - Email (text)
+    - Phone Number (number)
+    - Payment Method (select: Card / UPI / Wallet)
+    - Card Number / UPI ID / Wallet ID (text; card masked in receipt)
+    - Amount (auto-filled from booking)
+  - On "Pay Now":
+    - Simulates processing
+    - Shows success state
+    - Automatically downloads a PDF receipt via jsPDF
+    - Receipt includes booking reference, destination, travel dates, payer info, payment method, masked credentials, amount, and status
+
+### 3. **Gallery / Travel Moments**
 - **Backend**: New `GalleryPostModel` with endpoints at `/api/gallery`
   - POST `/api/gallery` - Upload image with caption, location, and tags
   - GET `/api/gallery` - List recent gallery posts (limit: 50)
@@ -23,7 +39,7 @@
   - Grid view of all posts
   - Like button for each post
 
-### 3. **Trip Analytics**
+### 4. **Trip Analytics**
 - **Backend**: New endpoint `/api/analytics/summary`
   - Returns: total_trips, total_spend, avg_days, top_destinations
 - **Frontend**: Dashboard enhancements
@@ -31,7 +47,7 @@
   - "Top Destinations" section showing most visited places
   - Analytics fetched on dashboard load
 
-### 4. **Geolocation Support**
+### 5. **Geolocation Support**
 - **Backend**: New endpoint `/api/geolocate?lat={lat}&lon={lon}`
   - Reverse geocoding using OpenWeather API
   - Returns city name and country from coordinates

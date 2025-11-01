@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { destinations as mockDestinations, mockWeather } from '../data/mock';
 import axios from 'axios';
 import { jsPDF } from 'jspdf';
@@ -14,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { MapPin, Cloud, Droplets, Calendar, Activity, X, Search, CheckCircle, Users, IndianRupee } from 'lucide-react';
 
 const Explore = () => {
+  const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedDestination, setSelectedDestination] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -115,9 +117,10 @@ const Explore = () => {
         currency: 'INR'
       });
 
+      // Navigate directly to Payment page with booking info
       setConfirmedBooking(response.data);
       setIsBookingModalOpen(false);
-      setIsConfirmationModalOpen(true);
+      navigate('/payment', { state: { booking: response.data } });
     } catch (error) {
       console.error('Booking failed:', error);
       alert(error.response?.data?.detail || 'Booking failed. Please try again.');

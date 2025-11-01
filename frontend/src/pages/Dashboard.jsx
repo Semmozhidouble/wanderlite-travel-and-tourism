@@ -6,7 +6,7 @@ import axios from 'axios';
 import { 
   MapPin, Calendar, Plus, Trash2,
   Plane, Wallet, Navigation, ListChecks, User,
-  Cloud, Droplets, Wind, TrendingUp
+  Cloud, Droplets, Wind, TrendingUp, FileText, Receipt
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -119,6 +119,8 @@ const Dashboard = () => {
   const quickActions = [
     { icon: Navigation, label: 'Explore', path: '/explore', color: 'from-blue-500 to-cyan-500' },
     { icon: Plane, label: 'Planner', path: '/planner', color: 'from-purple-500 to-pink-500' },
+    { icon: FileText, label: 'My Bookings', path: '/my-bookings', color: 'from-indigo-500 to-blue-500' },
+    { icon: Receipt, label: 'My Receipts', path: '/my-receipts', color: 'from-emerald-500 to-green-500' },
     { icon: ListChecks, label: 'Checklist', path: '/checklist', color: 'from-orange-500 to-red-500' },
     { icon: User, label: 'Profile', path: '/profile', color: 'from-green-500 to-teal-500' }
   ];
@@ -336,7 +338,7 @@ const Dashboard = () => {
             <CardTitle className="text-[#31A8E0]">Quick Actions</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {quickActions.map((action) => (
                 <Link key={action.path} to={action.path}>
                   <div className="group relative overflow-hidden rounded-xl p-6 bg-gradient-to-br hover:scale-105 transform transition duration-300 cursor-pointer shadow-lg hover:shadow-xl">
