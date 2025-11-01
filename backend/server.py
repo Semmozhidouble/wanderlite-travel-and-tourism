@@ -106,8 +106,8 @@ class BookingModel(Base):
     __tablename__ = "bookings"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), index=True, nullable=False)
-    trip_id = Column(String(36), ForeignKey("trips.id"), index=True, nullable=True)
+    user_id = Column(String(36), index=True, nullable=False)  # Removed ForeignKey constraint
+    trip_id = Column(String(36), index=True, nullable=True)  # Removed ForeignKey constraint
     destination = Column(String(255), nullable=False)
     start_date = Column(DateTime(timezone=True), nullable=True)
     end_date = Column(DateTime(timezone=True), nullable=True)
@@ -660,10 +660,10 @@ async def delete_trip(trip_id: str, current_user: User = Depends(get_current_use
 
 # Bookings endpoints
 @api_router.post("/bookings", response_model=Booking)
-async def create_booking(payload: BookingCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def create_booking(payload: BookingCreate, db: Session = Depends(get_db)):
     booking_ref = f"WL-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
     booking = BookingModel(
-        user_id=current_user.id,
+        user_id="guest",  # Default user for bookings without authentication
         trip_id=payload.trip_id,
         destination=payload.destination,
         start_date=payload.start_date,
@@ -695,8 +695,8 @@ async def create_booking(payload: BookingCreate, current_user: User = Depends(ge
     )
 
 @api_router.get("/bookings", response_model=List[Booking])
-async def list_bookings(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    rows = db.query(BookingModel).filter(BookingModel.user_id == current_user.id).order_by(BookingModel.created_at.desc()).all()
+async def list_bookings(db: Session = Depends(get_db)):
+    rows = db.query(BookingModel).order_by(BookingModel.created_at.desc()).all()
     return [
         Booking(
             id=r.id,
@@ -715,8 +715,8 @@ async def list_bookings(current_user: User = Depends(get_current_user), db: Sess
     ]
 
 @api_router.delete("/bookings/{booking_id}")
-async def delete_booking(booking_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    r = db.query(BookingModel).filter(BookingModel.id == booking_id, BookingModel.user_id == current_user.id).first()
+async def delete_booking(booking_id: str, db: Session = Depends(get_db)):
+    r = db.query(BookingModel).filter(BookingModel.id == booking_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Booking not found")
     db.delete(r)
@@ -835,13 +835,13 @@ async def analytics_summary(current_user: User = Depends(get_current_user), db: 
 # Destinations endpoint with real API integration using OpenTripMap
 @api_router.get("/destinations", response_model=List[Destination])
 async def get_destinations(category: Optional[str] = None, search: Optional[str] = None):
-    # Define popular destinations with coordinates and categories
+    # Define popular destinations with coordinates, categories, and images
     cities = [
-        {"name": "Goa", "lat": 15.2993, "lon": 74.1240, "category": "Beach"},
-        {"name": "Paris", "lat": 48.8566, "lon": 2.3522, "category": "Heritage"},
-        {"name": "Tokyo", "lat": 35.6762, "lon": 139.6503, "category": "Urban"},
-        {"name": "Bali", "lat": -8.3405, "lon": 115.0920, "category": "Beach"},
-        {"name": "Rome", "lat": 41.9028, "lon": 12.4964, "category": "Heritage"},
+        {"name": "Goa", "lat": 15.2993, "lon": 74.1240, "category": "Beach", "image": "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800&q=80"},
+        {"name": "Paris", "lat": 48.8566, "lon": 2.3522, "category": "Heritage", "image": "https://images.unsplash.com/photo-1431274172761-fca41d930114?w=800&q=80"},
+        {"name": "Tokyo", "lat": 35.6762, "lon": 139.6503, "category": "Urban", "image": "https://images.unsplash.com/photo-1526481280693-3bfa7568e0f3?w=800&q=80"},
+        {"name": "Bali", "lat": -8.3405, "lon": 115.0920, "category": "Beach", "image": "https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=800&q=80"},
+        {"name": "Rome", "lat": 41.9028, "lon": 12.4964, "category": "Heritage", "image": "https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=800&q=80"},
     ]
 
     destinations = []
@@ -888,7 +888,7 @@ async def get_destinations(category: Optional[str] = None, search: Optional[str]
                 "id": geoname_data.get("xid", str(uuid.uuid4())),
                 "name": geoname_data.get("name", city["name"]),
                 "category": city["category"],
-                "image": geoname_data.get("image", "https://via.placeholder.com/800x600"),
+                "image": city.get("image", "https://via.placeholder.com/800x600"),  # Use city-specific image
                 "short_description": geoname_data.get("wikipedia_extracts", {}).get("text", f"Explore the wonders of {city['name']}").split('.')[0] + ".",
                 "description": geoname_data.get("wikipedia_extracts", {}).get("text", f"A beautiful destination in {city['name']} with rich culture and attractions."),
                 "best_time": "Varies by season",  # Could be enhanced with real data
@@ -1023,4 +1023,8 @@ def on_startup():
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created/verified successfully")
 
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
 

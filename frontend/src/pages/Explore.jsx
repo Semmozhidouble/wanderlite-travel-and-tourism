@@ -1,20 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { destinations as mockDestinations, mockWeather } from '../data/mock';
 import axios from 'axios';
+import { jsPDF } from 'jspdf';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
-import { MapPin, Cloud, Droplets, Calendar, Activity, X, Search } from 'lucide-react';
+import { Label } from '../components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { MapPin, Cloud, Droplets, Calendar, Activity, X, Search, CheckCircle, Users, IndianRupee } from 'lucide-react';
 
 const Explore = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedDestination, setSelectedDestination] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState(false);
   const [destinations, setDestinations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [bookingData, setBookingData] = useState({
+    destination: '',
+    startDate: null,
+    endDate: null,
+    travelers: 1,
+    budgetRange: ''
+  });
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
+  const [bookingLoading, setBookingLoading] = useState(false);
 
   const categories = ['All', 'Beach', 'Heritage'];
 
@@ -53,6 +69,112 @@ const Explore = () => {
     setTimeout(() => setSelectedDestination(null), 300);
   };
 
+  const openBookingModal = (destination) => {
+    setBookingData({
+      destination: destination.name,
+      startDate: null,
+      endDate: null,
+      travelers: 1,
+      budgetRange: ''
+    });
+    setSelectedDestination(destination);
+    setIsBookingModalOpen(true);
+    setIsModalOpen(false);
+  };
+
+  const closeBookingModal = () => {
+    setIsBookingModalOpen(false);
+  };
+
+  const budgetRanges = [
+    { value: '20k-40k', label: '₹20,000 - ₹40,000', min: 20000, max: 40000 },
+    { value: '40k-80k', label: '₹40,000 - ₹80,000', min: 40000, max: 80000 },
+    { value: '80k-140k', label: '₹80,000 - ₹1,40,000', min: 80000, max: 140000 }
+  ];
+
+  const handleBookingSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!bookingData.startDate || !bookingData.endDate || !bookingData.budgetRange) {
+      alert('Please fill all required fields');
+      return;
+    }
+
+    setBookingLoading(true);
+    try {
+      const selectedBudget = budgetRanges.find(r => r.value === bookingData.budgetRange);
+      const avgPrice = (selectedBudget.min + selectedBudget.max) / 2;
+
+      const response = await axios.post('/api/bookings', {
+        destination: bookingData.destination,
+        start_date: bookingData.startDate.toISOString(),
+        end_date: bookingData.endDate.toISOString(),
+        travelers: bookingData.travelers,
+        package_type: selectedBudget.label,
+        total_price: avgPrice,
+        currency: 'INR'
+      });
+
+      setConfirmedBooking(response.data);
+      setIsBookingModalOpen(false);
+      setIsConfirmationModalOpen(true);
+    } catch (error) {
+      console.error('Booking failed:', error);
+      alert(error.response?.data?.detail || 'Booking failed. Please try again.');
+    } finally {
+      setBookingLoading(false);
+    }
+  };
+
+  const downloadBookingPDF = () => {
+    if (!confirmedBooking) return;
+
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFillColor(0, 119, 182);
+    doc.rect(0, 0, 210, 40, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(24);
+    doc.text('WanderLite', 105, 20, { align: 'center' });
+    doc.setFontSize(14);
+    doc.text('Booking Confirmation', 105, 30, { align: 'center' });
+
+    // Booking details
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(12);
+    let y = 55;
+
+    const details = [
+      ['Booking Reference:', confirmedBooking.booking_ref],
+      ['Status:', 'CONFIRMED'],
+      ['Destination:', confirmedBooking.destination],
+      ['Start Date:', new Date(confirmedBooking.start_date).toLocaleDateString() || '-'],
+      ['End Date:', new Date(confirmedBooking.end_date).toLocaleDateString() || '-'],
+      ['Number of Travelers:', confirmedBooking.travelers.toString()],
+      ['Package Type:', confirmedBooking.package_type || 'Standard'],
+      ['Total Amount:', `₹${confirmedBooking.total_price.toLocaleString()}`],
+      ['Booking Date:', new Date(confirmedBooking.created_at).toLocaleDateString()]
+    ];
+
+    details.forEach(([label, value]) => {
+      doc.setFont(undefined, 'bold');
+      doc.text(label, 20, y);
+      doc.setFont(undefined, 'normal');
+      doc.text(value, 80, y);
+      y += 10;
+    });
+
+    // Footer
+    y += 20;
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Thank you for booking with WanderLite!', 105, y, { align: 'center' });
+    doc.text('For any queries, contact us at support@wanderlite.com', 105, y + 7, { align: 'center' });
+
+    doc.save(`WanderLite_Booking_${confirmedBooking.booking_ref}.pdf`);
+  };
+
   return (
     <div className="min-h-screen pt-24 pb-16 bg-gradient-to-b from-gray-50 to-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -66,6 +188,16 @@ const Explore = () => {
           </p>
         </div>
 
+        {/* Loading State */}
+        {loading && (
+          <div className="flex justify-center items-center py-20">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#0077b6]"></div>
+          </div>
+        )}
+
+        {/* Content - only show when not loading */}
+        {!loading && (
+        <div>
         {/* Search and Filter Bar */}
         <div className="mb-12 space-y-6">
           {/* Search Bar */}
@@ -104,7 +236,7 @@ const Explore = () => {
         {/* Destination Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {filteredDestinations.map((destination) => {
-            const weather = mockWeather[destination.name];
+            const weather = mockWeather[destination.name] || { temp: 25, condition: "Pleasant", humidity: 60 };
             return (
               <Card
                 key={destination.id}
@@ -152,6 +284,8 @@ const Explore = () => {
             );
           })}
         </div>
+        </div>
+        )}
       </div>
 
       {/* Destination Details Modal */}
@@ -244,8 +378,221 @@ const Explore = () => {
                   ))}
                 </div>
               </div>
+
+              {/* Book Now Button */}
+              <div className="pt-4 border-t">
+                <Button
+                  onClick={() => openBookingModal(selectedDestination)}
+                  className="w-full h-12 bg-gradient-to-r from-[#0077b6] to-[#48cae4] hover:from-[#005f8f] hover:to-[#3ab5d9] text-white text-lg font-semibold rounded-lg shadow-lg"
+                >
+                  Book Now
+                </Button>
+              </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Booking Form Modal */}
+      <Dialog open={isBookingModalOpen} onOpenChange={setIsBookingModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-[#0077b6]">Book Your Trip</DialogTitle>
+            <DialogDescription>
+              Complete the form below to book your adventure
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleBookingSubmit} className="space-y-4 mt-4">
+            {/* Destination (Read-only) */}
+            <div className="space-y-2">
+              <Label className="text-base font-semibold flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#0077b6]" />
+                Destination
+              </Label>
+              <Input
+                value={bookingData.destination}
+                readOnly
+                className="bg-gray-50 border-2 border-gray-200"
+              />
+            </div>
+
+            {/* Start Date */}
+            <div className="space-y-2">
+              <Label className="text-base font-semibold flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#0077b6]" />
+                Start Date *
+              </Label>
+              <DatePicker
+                selected={bookingData.startDate}
+                onChange={(date) => setBookingData({ ...bookingData, startDate: date })}
+                minDate={new Date()}
+                placeholderText="Select start date"
+                className="w-full h-10 px-3 border-2 border-gray-200 rounded-md focus:border-[#0077b6] focus:outline-none"
+              />
+            </div>
+
+            {/* End Date */}
+            <div className="space-y-2">
+              <Label className="text-base font-semibold flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#0077b6]" />
+                End Date *
+              </Label>
+              <DatePicker
+                selected={bookingData.endDate}
+                onChange={(date) => setBookingData({ ...bookingData, endDate: date })}
+                minDate={bookingData.startDate || new Date()}
+                placeholderText="Select end date"
+                className="w-full h-10 px-3 border-2 border-gray-200 rounded-md focus:border-[#0077b6] focus:outline-none"
+              />
+            </div>
+
+            {/* Number of Travelers */}
+            <div className="space-y-2">
+              <Label className="text-base font-semibold flex items-center gap-2">
+                <Users className="w-4 h-4 text-[#0077b6]" />
+                Number of Travelers *
+              </Label>
+              <Select 
+                value={bookingData.travelers.toString()} 
+                onValueChange={(val) => setBookingData({ ...bookingData, travelers: parseInt(val) })}
+              >
+                <SelectTrigger className="border-2 border-gray-200">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((num) => (
+                    <SelectItem key={num} value={num.toString()}>
+                      {num} {num === 1 ? 'Traveler' : 'Travelers'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Budget Range */}
+            <div className="space-y-2">
+              <Label className="text-base font-semibold flex items-center gap-2">
+                <IndianRupee className="w-4 h-4 text-[#0077b6]" />
+                Budget Range *
+              </Label>
+              <Select 
+                value={bookingData.budgetRange} 
+                onValueChange={(val) => setBookingData({ ...bookingData, budgetRange: val })}
+              >
+                <SelectTrigger className="border-2 border-gray-200">
+                  <SelectValue placeholder="Select budget range" />
+                </SelectTrigger>
+                <SelectContent>
+                  {budgetRanges.map((range) => (
+                    <SelectItem key={range.value} value={range.value}>
+                      {range.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Submit Button */}
+            <div className="pt-4">
+              <Button
+                type="submit"
+                disabled={bookingLoading}
+                className="w-full h-12 bg-gradient-to-r from-[#0077b6] to-[#48cae4] hover:from-[#005f8f] hover:to-[#3ab5d9] text-white text-lg font-semibold rounded-lg shadow-lg"
+              >
+                {bookingLoading ? 'Processing...' : 'Confirm Booking'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Modal */}
+      <Dialog open={isConfirmationModalOpen} onOpenChange={setIsConfirmationModalOpen}>
+        <DialogContent className="max-w-lg">
+          <div className="text-center space-y-6">
+            {/* Success Icon */}
+            <div className="flex justify-center">
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
+                <CheckCircle className="w-12 h-12 text-green-600" />
+              </div>
+            </div>
+
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-bold text-gray-900">
+                Booking Confirmed!
+              </DialogTitle>
+              <DialogDescription className="text-base text-gray-600">
+                Your trip has been successfully booked
+              </DialogDescription>
+            </DialogHeader>
+
+            {confirmedBooking && (
+              <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-6 space-y-4 text-left">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600 font-medium">Booking ID</p>
+                    <p className="text-lg font-bold text-[#0077b6]">{confirmedBooking.booking_ref}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600 font-medium">Status</p>
+                    <Badge className="bg-green-100 text-green-700 border-green-200">
+                      CONFIRMED
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-200 pt-4 space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Destination:</span>
+                    <span className="font-semibold">{confirmedBooking.destination}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Start Date:</span>
+                    <span className="font-semibold">
+                      {confirmedBooking.start_date ? new Date(confirmedBooking.start_date).toLocaleDateString() : '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">End Date:</span>
+                    <span className="font-semibold">
+                      {confirmedBooking.end_date ? new Date(confirmedBooking.end_date).toLocaleDateString() : '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Travelers:</span>
+                    <span className="font-semibold">{confirmedBooking.travelers}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Package:</span>
+                    <span className="font-semibold">{confirmedBooking.package_type || 'Standard'}</span>
+                  </div>
+                  <div className="flex justify-between text-lg border-t border-gray-200 pt-3">
+                    <span className="text-gray-800 font-bold">Total Amount:</span>
+                    <span className="text-[#0077b6] font-bold">
+                      ₹{confirmedBooking.total_price.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <Button
+                onClick={downloadBookingPDF}
+                className="w-full h-12 bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 text-white font-semibold rounded-lg shadow-lg"
+              >
+                Download Booking Ticket (PDF)
+              </Button>
+              <Button
+                onClick={() => setIsConfirmationModalOpen(false)}
+                variant="outline"
+                className="w-full h-12 border-2 border-[#0077b6] text-[#0077b6] hover:bg-[#0077b6] hover:text-white font-semibold rounded-lg"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

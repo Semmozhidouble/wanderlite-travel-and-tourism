@@ -277,10 +277,14 @@ export const sampleItineraries = {
 // Mock weather data (will be replaced with real API later)
 export const mockWeather = {
   "Goa, India": { temp: 29, condition: "Sunny", humidity: 75 },
+  "Goa": { temp: 29, condition: "Sunny", humidity: 75 },
   "Paris, France": { temp: 18, condition: "Partly Cloudy", humidity: 65 },
+  "Paris": { temp: 18, condition: "Partly Cloudy", humidity: 65 },
   "Tokyo, Japan": { temp: 22, condition: "Clear", humidity: 60 },
+  "Tokyo": { temp: 22, condition: "Clear", humidity: 60 },
   "Kashmir, India": { temp: 12, condition: "Cool", humidity: 45 },
   "Bali, Indonesia": { temp: 30, condition: "Tropical", humidity: 80 },
+  "Bali": { temp: 30, condition: "Tropical", humidity: 80 },
   "Santorini, Greece": { temp: 24, condition: "Sunny", humidity: 55 },
   "Dubai, UAE": { temp: 35, condition: "Hot & Sunny", humidity: 50 },
   "Maldives": { temp: 28, condition: "Sunny", humidity: 78 }
