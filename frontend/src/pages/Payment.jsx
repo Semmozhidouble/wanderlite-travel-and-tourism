@@ -13,6 +13,12 @@ const Payment = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const booking = location.state?.booking;
+  const bookingId = location.state?.bookingId;
+  const bookingRef = location.state?.bookingRef;
+  const amount = location.state?.amount;
+  const currency = location.state?.currency;
+  const serviceType = location.state?.serviceType;
+  const serviceDetails = location.state?.serviceDetails;
 
   const [form, setForm] = useState({
     fullName: '',
@@ -24,17 +30,18 @@ const Payment = () => {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  const amount = useMemo(() => {
-    if (!booking) return 0;
-    return booking.total_price || 0;
-  }, [booking]);
+  const paymentAmount = useMemo(() => {
+    if (amount) return amount; // Service booking amount
+    if (booking) return booking.total_price || 0; // Old trip booking amount
+    return 0;
+  }, [amount, booking]);
 
   useEffect(() => {
-    if (!booking) {
+    if (!booking && !bookingId) {
       // If user navigates directly without booking, redirect to Explore
       navigate('/explore');
     }
-  }, [booking, navigate]);
+  }, [booking, bookingId, navigate]);
 
   const handleChange = (field) => (e) => {
     const value = e?.target ? e.target.value : e; // handles Select
@@ -72,7 +79,22 @@ const Payment = () => {
 
     // Try backend receipt generation first
     try {
-      const payload = {
+      // Prepare payload for service bookings or trip bookings
+      const payload = bookingRef ? {
+        // Service booking (flight/hotel/restaurant)
+        booking_ref: bookingRef,
+        destination: serviceDetails?.destination || '',
+        start_date: serviceDetails?.checkIn || serviceDetails?.travelDate || serviceDetails?.reservationDate || '',
+        end_date: serviceDetails?.checkOut || '',
+        travelers: serviceDetails?.travelers || serviceDetails?.guests || 1,
+        full_name: form.fullName,
+        email: form.email,
+        phone: form.phone,
+        method: form.method,
+        credential: form.credential,
+        amount: Number(paymentAmount) || 0,
+      } : {
+        // Old trip booking format
         booking_ref: booking?.booking_ref,
         destination: booking?.destination,
         start_date: booking?.start_date,
@@ -83,13 +105,21 @@ const Payment = () => {
         phone: form.phone,
         method: form.method,
         credential: form.credential,
-        amount: Number(amount) || 0,
+        amount: Number(paymentAmount) || 0,
       };
 
       const res = await axios.post('/api/payment/confirm', payload);
       setSuccess(true);
       setSubmitting(false);
-      navigate('/receipt', { state: { receiptUrl: res.data.receipt_url, bookingRef: res.data.booking_ref, booking, payer: { ...form } } });
+      navigate('/receipt', { 
+        state: { 
+          receiptUrl: res.data.receipt_url, 
+          ticketUrl: res.data.ticket_url,  // Include ticket URL
+          bookingRef: res.data.booking_ref, 
+          booking: booking || { booking_ref: bookingRef, ...serviceDetails },
+          payer: { ...form } 
+        } 
+      });
       return;
     } catch (err) {
       // Fallback: local PDF generation
@@ -151,24 +181,47 @@ const Payment = () => {
         </div>
 
         {/* Summary Card */}
-        {booking && (
+        {(booking || bookingRef) && (
           <Card className="mb-8 p-6 bg-gradient-to-br from-blue-50 to-cyan-50 border-0">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {serviceType && (
+                <div>
+                  <p className="text-sm text-gray-600">Service Type</p>
+                  <p className="text-lg font-bold text-[#0077b6]">{serviceType}</p>
+                </div>
+              )}
               <div>
                 <p className="text-sm text-gray-600">Booking Ref</p>
-                <p className="text-lg font-bold text-[#0077b6]">{booking.booking_ref}</p>
+                <p className="text-lg font-bold text-[#0077b6]">{bookingRef || booking?.booking_ref}</p>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">Destination</p>
-                <p className="font-semibold">{booking.destination}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Travel Dates</p>
-                <p className="font-semibold">{booking.start_date ? new Date(booking.start_date).toLocaleDateString() : '-'} to {booking.end_date ? new Date(booking.end_date).toLocaleDateString() : '-'}</p>
-              </div>
+              {(serviceDetails?.destination || booking?.destination) && (
+                <div>
+                  <p className="text-sm text-gray-600">Destination</p>
+                  <p className="font-semibold">{serviceDetails?.destination || booking?.destination}</p>
+                </div>
+              )}
+              {(serviceDetails?.checkIn || booking?.start_date) && (
+                <div>
+                  <p className="text-sm text-gray-600">
+                    {serviceType === 'Hotel' ? 'Check-in / Check-out' : 
+                     serviceType === 'Restaurant' ? 'Reservation Date' : 
+                     'Travel Date'}
+                  </p>
+                  <p className="font-semibold">
+                    {serviceType === 'Hotel' 
+                      ? `${serviceDetails?.checkIn} to ${serviceDetails?.checkOut}`
+                      : serviceType === 'Restaurant'
+                      ? `${serviceDetails?.reservationDate} at ${serviceDetails?.timeSlot}`
+                      : serviceType === 'Flight'
+                      ? serviceDetails?.travelDate
+                      : `${booking?.start_date ? new Date(booking.start_date).toLocaleDateString() : '-'} to ${booking?.end_date ? new Date(booking.end_date).toLocaleDateString() : '-'}`
+                    }
+                  </p>
+                </div>
+              )}
               <div>
                 <p className="text-sm text-gray-600">Amount</p>
-                <p className="text-[#0077b6] font-bold text-lg">₹{Number(amount).toLocaleString()}</p>
+                <p className="text-[#0077b6] font-bold text-lg">₹{Number(paymentAmount).toLocaleString()}</p>
               </div>
             </div>
           </Card>

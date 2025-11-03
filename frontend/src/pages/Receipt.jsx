@@ -2,12 +2,13 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
-import { CheckCircle } from 'lucide-react';
+import { CheckCircle, Ticket, FileText } from 'lucide-react';
 
 const Receipt = () => {
   const navigate = useNavigate();
   const { state } = useLocation();
   const receiptUrl = state?.receiptUrl || null;
+  const ticketUrl = state?.ticketUrl || null;
   const booking = state?.booking || null;
   const bookingRef = state?.bookingRef || booking?.booking_ref || 'WL';
   const payer = state?.payer || {};
@@ -20,8 +21,8 @@ const Receipt = () => {
             <CheckCircle className="w-12 h-12 text-green-600" />
           </div>
         </div>
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">Payment Successful</h1>
-        <p className="text-gray-600 mb-6">Your receipt is ready.</p>
+        <h1 className="text-4xl font-bold text-gray-900 mb-2">Payment Successful!</h1>
+        <p className="text-gray-600 mb-6">Your booking is confirmed. Download your documents below.</p>
 
         <Card className="p-6 text-left space-y-3 bg-gradient-to-br from-blue-50 to-cyan-50 border-0">
           <div className="flex justify-between">
@@ -53,15 +54,28 @@ const Receipt = () => {
         </Card>
 
         <div className="mt-6 flex flex-col gap-3 items-center">
-          {receiptUrl ? (
-            <Button asChild className="w-full max-w-sm h-12 bg-gradient-to-r from-green-600 to-emerald-500 text-white">
-              <a href={receiptUrl} target="_blank" rel="noreferrer">Download Receipt (PDF)</a>
+          {ticketUrl && (
+            <Button asChild className="w-full max-w-sm h-12 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+              <a href={`/${ticketUrl}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2">
+                <Ticket className="w-5 h-5" />
+                Download Ticket / Voucher
+              </a>
             </Button>
-          ) : (
-            <p className="text-sm text-gray-600">Receipt was downloaded locally. If not, please go back and retry.</p>
           )}
-          <div className="flex gap-3">
+          {receiptUrl && (
+            <Button asChild variant="outline" className="w-full max-w-sm h-12 border-green-600 text-green-600 hover:bg-green-50">
+              <a href={`/${receiptUrl}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2">
+                <FileText className="w-5 h-5" />
+                Download Payment Receipt
+              </a>
+            </Button>
+          )}
+          {!receiptUrl && !ticketUrl && (
+            <p className="text-sm text-gray-600">Documents were downloaded locally. If not, please go back and retry.</p>
+          )}
+          <div className="flex gap-3 mt-4">
             <Button variant="outline" onClick={() => navigate('/explore')}>Back to Explore</Button>
+            <Button onClick={() => navigate('/trip-history')}>View Trip History</Button>
             <Button onClick={() => navigate('/')}>Go Home</Button>
           </div>
         </div>

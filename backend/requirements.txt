@@ -27,3 +27,5 @@ typer>=0.9.0
 SQLAlchemy>=2.0.0
 PyMySQL>=1.1.0
 fpdf2>=2.7.9
+qrcode>=7.4.2
+pillow>=10.0.0

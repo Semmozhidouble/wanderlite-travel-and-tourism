@@ -16,6 +16,8 @@ import json
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fpdf import FPDF
+import qrcode
+from io import BytesIO
 
 # SQLAlchemy (MySQL via XAMPP)
 from sqlalchemy import (
@@ -167,6 +169,20 @@ class ChecklistItemModel(Base):
     category = Column(String(100), nullable=True)  # e.g., Clothing, Documents, Toiletries, etc.
     is_packed = Column(Integer, default=0)  # 0 = not packed, 1 = packed
     is_auto_generated = Column(Integer, default=0)  # 0 = user added, 1 = auto-suggested
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class ServiceBookingModel(Base):
+    __tablename__ = "service_bookings"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), index=True, nullable=True)
+    service_type = Column(String(30), nullable=False)  # flight / hotel / restaurant
+    service_json = Column(Text, nullable=False)
+    total_price = Column(Float, nullable=False, default=0.0)
+    currency = Column(String(10), default="INR")
+    booking_ref = Column(String(80), unique=True, index=True, nullable=False)
+    status = Column(String(20), default="Pending")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -364,6 +380,7 @@ class PaymentResponse(BaseModel):
     status: str
     booking_ref: str
     receipt_url: str
+    ticket_url: Optional[str] = None  # For service-specific tickets (flight/hotel/restaurant)
 
 
 class ReceiptRecord(BaseModel):
@@ -399,6 +416,50 @@ class ChecklistItemCreate(BaseModel):
 
 class BookingStatusUpdate(BaseModel):
     status: str  # Confirmed / Cancelled / Completed
+
+
+# Service Booking Models
+class ServiceBookingCreate(BaseModel):
+    service_type: str  # flight / hotel / restaurant
+    service_json: str  # JSON string of service details
+    total_price: float
+    currency: str = "INR"
+
+
+class ServiceBookingResponse(BaseModel):
+    id: str
+    user_id: str
+    service_type: str
+    service_json: str
+    total_price: float
+    currency: str
+    booking_ref: str
+    status: str
+    created_at: datetime
+
+
+# Search Query Models
+class FlightSearchQuery(BaseModel):
+    origin: str
+    destination: str
+    date: Optional[str] = None
+    travelers: int = 1
+
+
+class HotelSearchQuery(BaseModel):
+    destination: str
+    check_in: Optional[str] = None
+    check_out: Optional[str] = None
+    guests: int = 1
+    min_rating: Optional[float] = None
+    max_price: Optional[float] = None
+
+
+class RestaurantSearchQuery(BaseModel):
+    destination: str
+    cuisine: Optional[str] = None
+    budget: Optional[str] = None  # budget / mid-range / fine-dining
+
 
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
@@ -504,6 +565,477 @@ def _mask_credential(method: str, credential: str) -> str:
         pass
     return credential
 
+def _generate_flight_ticket_pdf(service_data: dict, booking_ref: str, passenger_info: dict, upload_dir: Path) -> str:
+    """Generate a realistic flight ticket PDF with boarding pass layout."""
+    tickets_dir = upload_dir / 'tickets'
+    tickets_dir.mkdir(parents=True, exist_ok=True)
+    
+    filename = f"flight_ticket_{booking_ref}.pdf"
+    file_path = tickets_dir / filename
+    
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Header - Airline branding
+    pdf.set_fill_color(0, 51, 102)  # Dark blue
+    pdf.rect(0, 0, 210, 40, 'F')
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font('Arial', 'B', 24)
+    pdf.set_xy(10, 10)
+    pdf.cell(0, 10, service_data.get('airline', 'Airline'), 0, 1)
+    pdf.set_font('Arial', '', 10)
+    pdf.set_xy(10, 22)
+    pdf.cell(0, 5, 'BOARDING PASS / E-TICKET', 0, 1)
+    
+    # PNR and E-Ticket Number
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_xy(150, 10)
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 5, f'PNR: {booking_ref}', 0, 1)
+    pdf.set_xy(150, 17)
+    pdf.set_font('Arial', '', 9)
+    pdf.cell(0, 5, f"E-Ticket: {booking_ref[:6].upper()}", 0, 1)
+    pdf.set_xy(150, 24)
+    pdf.cell(0, 5, f"Date: {datetime.now().strftime('%d %b %Y')}", 0, 1)
+    
+    # Passenger Details Section
+    y = 50
+    pdf.set_xy(10, y)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.rect(10, y, 190, 8, 'F')
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(0, 8, 'PASSENGER DETAILS', 0, 1)
+    
+    y += 12
+    pdf.set_font('Arial', '', 10)
+    pdf.set_xy(10, y)
+    pdf.cell(95, 6, f"Name: {passenger_info.get('fullName', passenger_info.get('full_name', 'N/A'))}", 0, 0)
+    pdf.cell(95, 6, f"Gender: {passenger_info.get('gender', 'N/A').capitalize()}", 0, 1)
+    
+    y += 8
+    pdf.set_xy(10, y)
+    pdf.cell(95, 6, f"Date of Birth: {passenger_info.get('dateOfBirth', passenger_info.get('date_of_birth', 'N/A'))}", 0, 0)
+    pdf.cell(95, 6, f"Nationality: {passenger_info.get('nationality', 'N/A')}", 0, 1)
+    
+    y += 8
+    pdf.set_xy(10, y)
+    pdf.cell(95, 6, f"Email: {passenger_info.get('email', 'N/A')}", 0, 0)
+    pdf.cell(95, 6, f"Mobile: {passenger_info.get('mobile', 'N/A')}", 0, 1)
+    
+    y += 8
+    pdf.set_xy(10, y)
+    passport_num = passenger_info.get('passportNumber', passenger_info.get('passport_number', 'N/A'))
+    pdf.cell(0, 6, f"Passport / ID: {passport_num}", 0, 1)
+    
+    # Flight Details Section with Boarding Pass Layout
+    y += 15
+    pdf.set_xy(10, y)
+    pdf.set_fill_color(0, 102, 204)  # Blue
+    pdf.rect(10, y, 190, 10, 'F')
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font('Arial', 'B', 12)
+    pdf.set_xy(10, y + 2)
+    pdf.cell(0, 6, 'FLIGHT INFORMATION', 0, 1, 'C')
+    
+    # Flight Number and Class
+    y += 15
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'B', 14)
+    pdf.cell(95, 8, f"Flight: {service_data.get('flight_number', 'N/A')}", 0, 0)
+    pdf.cell(95, 8, f"Class: {service_data.get('class', 'Economy').upper()}", 0, 1)
+    
+    # Route with large font
+    y += 15
+    pdf.set_font('Arial', 'B', 18)
+    pdf.set_xy(10, y)
+    origin = service_data.get('origin', 'N/A')
+    destination = service_data.get('destination', 'N/A')
+    pdf.cell(70, 10, origin, 0, 0, 'C')
+    pdf.set_font('Arial', '', 16)
+    pdf.cell(50, 10, '✈', 0, 0, 'C')
+    pdf.set_font('Arial', 'B', 18)
+    pdf.cell(70, 10, destination, 0, 1, 'C')
+    
+    # Departure and Arrival Times
+    y += 15
+    pdf.set_font('Arial', '', 10)
+    departure_time = service_data.get('departure_time', '')
+    arrival_time = service_data.get('arrival_time', '')
+    departure_date = service_data.get('departureDate', '')
+    
+    try:
+        if departure_time:
+            dep_dt = datetime.fromisoformat(departure_time.replace('Z', '+00:00'))
+            dep_str = dep_dt.strftime('%H:%M')
+            dep_date = dep_dt.strftime('%d %b %Y')
+        elif departure_date:
+            dep_str = 'TBA'
+            dep_date = departure_date
+        else:
+            dep_str = 'TBA'
+            dep_date = 'TBA'
+            
+        if arrival_time:
+            arr_dt = datetime.fromisoformat(arrival_time.replace('Z', '+00:00'))
+            arr_str = arr_dt.strftime('%H:%M')
+            arr_date = arr_dt.strftime('%d %b %Y')
+        else:
+            arr_str = 'TBA'
+            arr_date = dep_date
+    except:
+        dep_str = departure_time[:5] if departure_time else 'TBA'
+        arr_str = arrival_time[:5] if arrival_time else 'TBA'
+        dep_date = departure_date if departure_date else 'TBA'
+        arr_date = dep_date
+    
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(70, 6, 'DEPARTURE', 0, 0, 'C')
+    pdf.cell(50, 6, 'DURATION', 0, 0, 'C')
+    pdf.cell(70, 6, 'ARRIVAL', 0, 1, 'C')
+    
+    y += 8
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'B', 14)
+    pdf.cell(70, 6, dep_str, 0, 0, 'C')
+    pdf.set_font('Arial', '', 11)
+    pdf.cell(50, 6, service_data.get('duration', 'N/A'), 0, 0, 'C')
+    pdf.set_font('Arial', 'B', 14)
+    pdf.cell(70, 6, arr_str, 0, 1, 'C')
+    
+    y += 8
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', '', 9)
+    pdf.cell(70, 5, dep_date, 0, 0, 'C')
+    pdf.cell(50, 5, '', 0, 0, 'C')
+    pdf.cell(70, 5, arr_date, 0, 1, 'C')
+    
+    # Boarding Pass Section
+    y += 15
+    pdf.set_xy(10, y)
+    pdf.set_fill_color(255, 215, 0)  # Gold
+    pdf.rect(10, y, 190, 45, 'F')
+    pdf.set_fill_color(0, 0, 0)
+    pdf.rect(10, y, 190, 10, 'F')
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font('Arial', 'B', 12)
+    pdf.set_xy(10, y + 2)
+    pdf.cell(0, 6, 'BOARDING INFORMATION', 0, 1, 'C')
+    
+    y += 15
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', 'B', 11)
+    pdf.set_xy(15, y)
+    pdf.cell(45, 6, 'GATE', 0, 0)
+    pdf.cell(45, 6, 'SEAT', 0, 0)
+    pdf.cell(45, 6, 'BOARDING TIME', 0, 0)
+    pdf.cell(45, 6, 'DATE', 0, 1)
+    
+    y += 8
+    pdf.set_font('Arial', 'B', 16)
+    pdf.set_xy(15, y)
+    gate = service_data.get('gate', 'TBA')
+    seat = passenger_info.get('seatNumber', passenger_info.get('seat_number', 'N/A'))
+    boarding_time = service_data.get('boardingTime', 'TBA')
+    
+    pdf.cell(45, 8, str(gate), 0, 0)
+    pdf.cell(45, 8, seat, 0, 0)
+    pdf.set_font('Arial', 'B', 14)
+    pdf.cell(45, 8, boarding_time, 0, 0)
+    pdf.set_font('Arial', '', 10)
+    pdf.cell(45, 8, dep_date, 0, 1)
+    
+    # Additional Information
+    y += 15
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(60, 6, 'Baggage Allowance:', 0, 0)
+    pdf.set_font('Arial', '', 10)
+    pdf.cell(0, 6, service_data.get('baggage', 'Check-in: 20kg, Cabin: 7kg'), 0, 1)
+    
+    y += 8
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(60, 6, 'Booking Status:', 0, 0)
+    pdf.set_font('Arial', '', 10)
+    pdf.set_text_color(0, 128, 0)
+    pdf.cell(0, 6, 'CONFIRMED', 0, 1)
+    
+    # Generate QR Code
+    y += 15
+    pdf.set_text_color(0, 0, 0)
+    
+    # QR Code data includes all important flight information
+    passenger_name = passenger_info.get('fullName', passenger_info.get('full_name', 'N/A'))
+    qr_data = f"PNR: {booking_ref}\nPassenger: {passenger_name}\nFlight: {service_data.get('flight_number', 'N/A')}\nSeat: {seat}\nGate: {gate}\nBoarding: {boarding_time}\nFrom: {origin}\nTo: {destination}\nDate: {dep_date}"
+    
+    # Create QR code
+    qr = qrcode.QRCode(version=1, box_size=10, border=2)
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    
+    # Save QR code to temporary file
+    qr_temp_path = tickets_dir / f"qr_{booking_ref}.png"
+    qr_img.save(str(qr_temp_path))
+    
+    # Add QR code to PDF (right side)
+    pdf.image(str(qr_temp_path), x=155, y=y, w=40, h=40)
+    
+    # Add barcode on left side
+    pdf.set_xy(10, y)
+    pdf.set_fill_color(0, 0, 0)
+    for i in range(35):
+        if i % 2 == 0:
+            pdf.rect(10 + i * 3, y, 2, 15, 'F')
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_xy(10, y + 18)
+    pdf.set_font('Arial', '', 8)
+    pdf.cell(105, 4, f'*{booking_ref}*', 0, 0, 'C')
+    
+    # QR Code label
+    pdf.set_xy(155, y + 42)
+    pdf.set_font('Arial', '', 7)
+    pdf.cell(40, 3, 'Scan for Details', 0, 0, 'C')
+    
+    # Footer
+    y += 50
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'I', 9)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 5, '* Please arrive at the airport at least 2-3 hours before departure for international flights.', 0, 1)
+    y += 5
+    pdf.set_xy(10, y)
+    pdf.cell(0, 5, '* Carry a valid government-issued photo ID and passport for verification.', 0, 1)
+    y += 5
+    pdf.set_xy(10, y)
+    pdf.cell(0, 5, f"* Boarding closes 30 minutes before departure. For queries: support@wanderlite.com | PNR: {booking_ref}", 0, 1)
+    
+    pdf.output(str(file_path))
+    
+    # Clean up QR code temp file
+    try:
+        qr_temp_path.unlink()
+    except:
+        pass
+    
+    return str(file_path.relative_to(upload_dir))
+
+
+def _generate_hotel_voucher_pdf(service_data: dict, booking_ref: str, guest_info: dict, upload_dir: Path) -> str:
+    """Generate a hotel booking voucher PDF."""
+    tickets_dir = upload_dir / 'tickets'
+    tickets_dir.mkdir(parents=True, exist_ok=True)
+    
+    filename = f"hotel_voucher_{booking_ref}.pdf"
+    file_path = tickets_dir / filename
+    
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Header
+    pdf.set_fill_color(102, 51, 153)  # Purple
+    pdf.rect(0, 0, 210, 35, 'F')
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font('Arial', 'B', 20)
+    pdf.set_xy(10, 10)
+    pdf.cell(0, 10, 'HOTEL BOOKING VOUCHER', 0, 1)
+    
+    pdf.set_xy(150, 12)
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(0, 5, f'Voucher: {booking_ref}', 0, 1)
+    
+    # Hotel Name
+    y = 45
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', 'B', 16)
+    pdf.set_xy(10, y)
+    pdf.cell(0, 10, service_data.get('name', 'Hotel Name'), 0, 1)
+    
+    # Rating
+    rating = service_data.get('rating', 0)
+    stars = '★' * int(rating) + '☆' * (5 - int(rating))
+    pdf.set_font('Arial', '', 12)
+    pdf.set_xy(10, y + 10)
+    pdf.cell(0, 6, f"{stars} ({rating}/5)", 0, 1)
+    
+    # Location
+    pdf.set_xy(10, y + 18)
+    pdf.cell(0, 6, f"Location: {service_data.get('location', 'N/A')}", 0, 1)
+    
+    # Guest Details
+    y += 35
+    pdf.set_xy(10, y)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.rect(10, y, 190, 8, 'F')
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(0, 8, 'GUEST DETAILS', 0, 1)
+    
+    y += 12
+    pdf.set_font('Arial', '', 10)
+    pdf.set_xy(10, y)
+    pdf.cell(0, 6, f"Name: {guest_info.get('full_name', 'N/A')}", 0, 1)
+    pdf.set_xy(10, y + 6)
+    pdf.cell(0, 6, f"Email: {guest_info.get('email', 'N/A')}", 0, 1)
+    pdf.set_xy(10, y + 12)
+    pdf.cell(0, 6, f"Phone: {guest_info.get('phone', 'N/A')}", 0, 1)
+    pdf.set_xy(10, y + 18)
+    pdf.cell(0, 6, f"Guests: {service_data.get('guests', 1)} person(s)", 0, 1)
+    
+    # Booking Details
+    y += 35
+    pdf.set_xy(10, y)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.rect(10, y, 190, 8, 'F')
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(0, 8, 'BOOKING DETAILS', 0, 1)
+    
+    y += 12
+    pdf.set_font('Arial', '', 10)
+    pdf.set_xy(10, y)
+    pdf.cell(95, 6, f"Check-in: {service_data.get('check_in', 'N/A')}", 0, 0)
+    pdf.cell(95, 6, f"Check-out: {service_data.get('check_out', 'N/A')}", 0, 1)
+    
+    pdf.set_xy(10, y + 8)
+    pdf.cell(95, 6, f"Nights: {service_data.get('nights', 1)} night(s)", 0, 0)
+    pdf.cell(95, 6, f"Room Type: {service_data.get('room_type', 'Standard')}", 0, 1)
+    
+    # Amenities
+    y += 25
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(0, 6, 'Amenities:', 0, 1)
+    pdf.set_font('Arial', '', 9)
+    amenities = service_data.get('amenities', [])
+    amenities_text = ', '.join(amenities) if amenities else 'Contact hotel for details'
+    pdf.set_xy(10, y + 6)
+    pdf.multi_cell(190, 5, amenities_text)
+    
+    # Footer
+    y = 250
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'I', 9)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 5, '* Please present this voucher at the hotel reception during check-in.', 0, 1)
+    pdf.cell(0, 5, '* Carry a valid government-issued ID for verification.', 0, 1)
+    pdf.cell(0, 5, f"* For any queries, contact: support@wanderlite.com | Booking Ref: {booking_ref}", 0, 1)
+    
+    pdf.output(str(file_path))
+    return str(file_path.relative_to(upload_dir))
+
+
+def _generate_restaurant_reservation_pdf(service_data: dict, booking_ref: str, guest_info: dict, upload_dir: Path) -> str:
+    """Generate a restaurant reservation confirmation PDF."""
+    tickets_dir = upload_dir / 'tickets'
+    tickets_dir.mkdir(parents=True, exist_ok=True)
+    
+    filename = f"restaurant_reservation_{booking_ref}.pdf"
+    file_path = tickets_dir / filename
+    
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Header
+    pdf.set_fill_color(230, 126, 34)  # Orange
+    pdf.rect(0, 0, 210, 35, 'F')
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font('Arial', 'B', 20)
+    pdf.set_xy(10, 10)
+    pdf.cell(0, 10, 'RESTAURANT RESERVATION', 0, 1)
+    
+    pdf.set_xy(150, 12)
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(0, 5, f'Ref: {booking_ref}', 0, 1)
+    
+    # Restaurant Name
+    y = 45
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', 'B', 18)
+    pdf.set_xy(10, y)
+    pdf.cell(0, 10, service_data.get('name', 'Restaurant Name'), 0, 1)
+    
+    # Cuisine & Rating
+    pdf.set_font('Arial', '', 11)
+    pdf.set_xy(10, y + 12)
+    pdf.cell(0, 6, f"Cuisine: {service_data.get('cuisine', 'Multi-cuisine')}", 0, 1)
+    
+    rating = service_data.get('rating', 0)
+    stars = '★' * int(rating) + '☆' * (5 - int(rating))
+    pdf.set_xy(10, y + 18)
+    pdf.cell(0, 6, f"Rating: {stars} ({rating}/5)", 0, 1)
+    
+    # Guest Details
+    y += 35
+    pdf.set_xy(10, y)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.rect(10, y, 190, 8, 'F')
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(0, 8, 'RESERVATION DETAILS', 0, 1)
+    
+    y += 12
+    pdf.set_font('Arial', '', 10)
+    pdf.set_xy(10, y)
+    pdf.cell(0, 6, f"Name: {guest_info.get('full_name', 'N/A')}", 0, 1)
+    pdf.set_xy(10, y + 6)
+    pdf.cell(0, 6, f"Phone: {guest_info.get('phone', 'N/A')}", 0, 1)
+    pdf.set_xy(10, y + 12)
+    pdf.cell(0, 6, f"Email: {guest_info.get('email', 'N/A')}", 0, 1)
+    
+    # Reservation Info
+    y += 28
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(60, 6, 'Date & Time:', 0, 0)
+    pdf.set_font('Arial', '', 10)
+    reservation_time = service_data.get('reservation_time', datetime.now().strftime('%d %b %Y, %H:%M'))
+    pdf.cell(0, 6, reservation_time, 0, 1)
+    
+    pdf.set_xy(10, y + 8)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(60, 6, 'Number of Guests:', 0, 0)
+    pdf.set_font('Arial', '', 10)
+    pdf.cell(0, 6, f"{service_data.get('guests', 2)} person(s)", 0, 1)
+    
+    pdf.set_xy(10, y + 16)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(60, 6, 'Table Preference:', 0, 0)
+    pdf.set_font('Arial', '', 10)
+    pdf.cell(0, 6, service_data.get('table_preference', 'Standard seating'), 0, 1)
+    
+    # Specialty Dish
+    y += 35
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(0, 6, 'Recommended Specialty:', 0, 1)
+    pdf.set_font('Arial', '', 10)
+    pdf.set_xy(10, y + 6)
+    pdf.cell(0, 6, service_data.get('specialty_dish', 'Ask for chef recommendations'), 0, 1)
+    
+    # Location
+    y += 20
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(0, 6, 'Address:', 0, 1)
+    pdf.set_font('Arial', '', 10)
+    pdf.set_xy(10, y + 6)
+    pdf.multi_cell(190, 5, f"{service_data.get('location', 'N/A')}\nDistance: {service_data.get('distance', 'N/A')}")
+    
+    # Footer
+    y = 250
+    pdf.set_xy(10, y)
+    pdf.set_font('Arial', 'I', 9)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 5, '* Please arrive on time or call to inform if delayed.', 0, 1)
+    pdf.cell(0, 5, '* Reservation may be cancelled if you are more than 15 minutes late without notice.', 0, 1)
+    pdf.cell(0, 5, f"* For cancellation or changes, contact: {guest_info.get('phone', 'N/A')} | Ref: {booking_ref}", 0, 1)
+    
+    pdf.output(str(file_path))
+    return str(file_path.relative_to(upload_dir))
+
+
 def _generate_receipt_pdf(payload: PaymentRequest, upload_dir: Path) -> str:
     """Generate a simple payment receipt PDF and return the relative file path under uploads."""
     receipts_dir = upload_dir / 'receipts'
@@ -563,8 +1095,40 @@ async def confirm_payment(payload: PaymentRequest, db: Session = Depends(get_db)
     try:
         upload_dir = Path('uploads')
         upload_dir.mkdir(exist_ok=True)
+        
+        booking_ref = payload.booking_ref or f"WL-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
+        
+        # Check if this is a service booking (flight/hotel/restaurant)
+        service_booking = None
+        if payload.booking_ref:
+            service_booking = db.query(ServiceBookingModel).filter(
+                ServiceBookingModel.booking_ref == payload.booking_ref
+            ).first()
+        
+        # Generate appropriate ticket/voucher based on service type
+        ticket_url = None
+        if service_booking:
+            import json
+            service_data = json.loads(service_booking.service_json)
+            guest_info = {
+                'full_name': payload.full_name,
+                'email': payload.email,
+                'phone': payload.phone
+            }
+            
+            if service_booking.service_type == 'flight':
+                ticket_url = _generate_flight_ticket_pdf(service_data, booking_ref, guest_info, upload_dir)
+            elif service_booking.service_type == 'hotel':
+                ticket_url = _generate_hotel_voucher_pdf(service_data, booking_ref, guest_info, upload_dir)
+            elif service_booking.service_type == 'restaurant':
+                ticket_url = _generate_restaurant_reservation_pdf(service_data, booking_ref, guest_info, upload_dir)
+            
+            # Update service booking status to Confirmed
+            service_booking.status = 'Confirmed'
+            db.commit()
+        
+        # Always generate payment receipt
         receipt_url = _generate_receipt_pdf(payload, upload_dir)
-        booking_ref = payload.booking_ref or receipt_url.rsplit('receipt_', 1)[-1].replace('.pdf', '')
         
         # Save receipt record to database
         receipt_record = PaymentReceiptModel(
@@ -584,7 +1148,17 @@ async def confirm_payment(payload: PaymentRequest, db: Session = Depends(get_db)
         db.add(receipt_record)
         db.commit()
         
-        return PaymentResponse(status='success', booking_ref=booking_ref, receipt_url=receipt_url)
+        # Return both receipt and ticket (if applicable)
+        response_data = {
+            'status': 'success',
+            'booking_ref': booking_ref,
+            'receipt_url': receipt_url
+        }
+        
+        if ticket_url:
+            response_data['ticket_url'] = ticket_url
+        
+        return PaymentResponse(**response_data)
     except Exception as e:
         logger.exception("Payment confirmation failed")
         raise HTTPException(status_code=500, detail=f"Failed to generate receipt: {e}")
@@ -1246,13 +1820,16 @@ async def analytics_summary(current_user: User = Depends(get_current_user), db: 
 # Destinations endpoint with real API integration using OpenTripMap
 @api_router.get("/destinations", response_model=List[Destination])
 async def get_destinations(category: Optional[str] = None, search: Optional[str] = None):
-    # Define popular destinations with coordinates, categories, and images
+    # Define popular destinations with coordinates, categories, and images (matching mock.js format)
     cities = [
-        {"name": "Goa", "lat": 15.2993, "lon": 74.1240, "category": "Beach", "image": "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800&q=80"},
-        {"name": "Paris", "lat": 48.8566, "lon": 2.3522, "category": "Heritage", "image": "https://images.unsplash.com/photo-1431274172761-fca41d930114?w=800&q=80"},
-        {"name": "Tokyo", "lat": 35.6762, "lon": 139.6503, "category": "Urban", "image": "https://images.unsplash.com/photo-1526481280693-3bfa7568e0f3?w=800&q=80"},
-        {"name": "Bali", "lat": -8.3405, "lon": 115.0920, "category": "Beach", "image": "https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=800&q=80"},
-        {"name": "Rome", "lat": 41.9028, "lon": 12.4964, "category": "Heritage", "image": "https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=800&q=80"},
+        {"name": "Goa, India", "lat": 15.2993, "lon": 74.1240, "category": "Beach", "image": "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800&q=80", "shortDescription": "Sun, sand, and endless beaches"},
+        {"name": "Paris, France", "lat": 48.8566, "lon": 2.3522, "category": "Heritage", "image": "https://images.unsplash.com/photo-1431274172761-fca41d930114?w=800&q=80", "shortDescription": "The city of lights and love"},
+        {"name": "Tokyo, Japan", "lat": 35.6762, "lon": 139.6503, "category": "Adventure", "image": "https://images.unsplash.com/photo-1526481280693-3bfa7568e0f3?w=800&q=80", "shortDescription": "Where tradition meets technology"},
+        {"name": "Bali, Indonesia", "lat": -8.3405, "lon": 115.0920, "category": "Beach", "image": "https://images.pexels.com/photos/3601425/pexels-photo-3601425.jpeg?w=800&q=80", "shortDescription": "Island of the Gods"},
+        {"name": "Santorini, Greece", "lat": 36.3932, "lon": 25.4615, "category": "Heritage", "image": "https://images.unsplash.com/photo-1613395877344-13d4a8e0d49e?w=800&q=80", "shortDescription": "Whitewashed beauty of the Aegean"},
+        {"name": "Dubai, UAE", "lat": 25.2048, "lon": 55.2708, "category": "Adventure", "image": "https://images.unsplash.com/photo-1605130284535-11dd9eedc58a?w=800&q=80", "shortDescription": "Futuristic luxury in the desert"},
+        {"name": "Maldives", "lat": 3.2028, "lon": 73.2207, "category": "Beach", "image": "https://images.unsplash.com/photo-1637576308588-6647bf80944d?w=800&q=80", "shortDescription": "Tropical paradise with crystal waters"},
+        {"name": "Kashmir, India", "lat": 34.0837, "lon": 74.7973, "category": "Mountain", "image": "https://images.unsplash.com/photo-1694084086064-9cdd1ef07d71?w=800&q=80", "shortDescription": "Paradise on Earth"},
     ]
 
     destinations = []
@@ -1297,15 +1874,15 @@ async def get_destinations(category: Optional[str] = None, search: Optional[str]
             # Map to Destination model
             dest = {
                 "id": geoname_data.get("xid", str(uuid.uuid4())),
-                "name": geoname_data.get("name", city["name"]),
+                "name": city["name"],  # Use full name with country
                 "category": city["category"],
-                "image": city.get("image", "https://via.placeholder.com/800x600"),  # Use city-specific image
-                "short_description": geoname_data.get("wikipedia_extracts", {}).get("text", f"Explore the wonders of {city['name']}").split('.')[0] + ".",
-                "description": geoname_data.get("wikipedia_extracts", {}).get("text", f"A beautiful destination in {city['name']} with rich culture and attractions."),
-                "best_time": "Varies by season",  # Could be enhanced with real data
+                "image": city.get("image", "https://via.placeholder.com/800x600"),
+                "short_description": city.get("shortDescription", f"Explore the wonders of {city['name']}"),
+                "description": geoname_data.get("wikipedia_extracts", {}).get("text", f"A beautiful destination with rich culture and attractions. {city['name']} offers unforgettable experiences for every traveler."),
+                "best_time": "Varies by season",
                 "weather": weather,
-                "attractions": attractions,
-                "activities": ["Sightseeing", "Local cuisine", "Cultural experiences"]  # Generic activities
+                "attractions": attractions if attractions else ["Historic Sites", "Cultural Landmarks", "Natural Beauty"],
+                "activities": ["Sightseeing", "Local cuisine", "Cultural experiences", "Photography"]
             }
             destinations.append(Destination(**dest))
         except Exception as e:
@@ -1313,6 +1890,283 @@ async def get_destinations(category: Optional[str] = None, search: Optional[str]
             continue
 
     return destinations
+
+
+# =============================
+# Service Booking Endpoints (Flights, Hotels, Restaurants)
+# =============================
+
+def _generate_mock_flights(origin: str, destination: str, date: Optional[str], travelers: int):
+    """Generate mock flight data"""
+    airlines = [
+        {"name": "IndiGo", "code": "6E"},
+        {"name": "Air India", "code": "AI"},
+        {"name": "SpiceJet", "code": "SG"},
+        {"name": "Vistara", "code": "UK"},
+        {"name": "GoAir", "code": "G8"}
+    ]
+    
+    flights = []
+    base_date = datetime.now() if not date else datetime.strptime(date, "%Y-%m-%d")
+    
+    for i, airline in enumerate(airlines):
+        dep_hour = 6 + (i * 3)
+        arr_hour = dep_hour + 2 + (i % 3)
+        
+        flight = {
+            "id": f"FL{uuid.uuid4().hex[:8].upper()}",
+            "airline": airline["name"],
+            "flight_number": f"{airline['code']}{1000 + i}",
+            "origin": origin,
+            "destination": destination,
+            "departure_time": base_date.replace(hour=dep_hour, minute=0).isoformat(),
+            "arrival_time": base_date.replace(hour=arr_hour, minute=30).isoformat(),
+            "duration": f"{arr_hour - dep_hour}h 30m",
+            "price": 3500 + (i * 800),
+            "currency": "INR",
+            "seats_available": 45 - (i * 5),
+            "refund_policy": "Free cancellation up to 24 hours" if i % 2 == 0 else "Non-refundable",
+            "baggage": "15kg check-in, 7kg cabin"
+        }
+        flights.append(flight)
+    
+    return flights
+
+
+def _generate_mock_hotels(destination: str, check_in: Optional[str], check_out: Optional[str], 
+                          guests: int, min_rating: Optional[float], max_price: Optional[float]):
+    """Generate mock hotel data"""
+    hotels_db = [
+        {
+            "name": "Grand Palace Hotel",
+            "location": f"Central {destination}",
+            "rating": 4.5,
+            "price_per_night": 3500,
+            "amenities": ["Free WiFi", "Pool", "Spa", "Restaurant", "Gym"],
+            "image_url": "https://via.placeholder.com/400x300/3498db/ffffff?text=Grand+Palace"
+        },
+        {
+            "name": "Comfort Inn & Suites",
+            "location": f"Near Airport, {destination}",
+            "rating": 4.0,
+            "price_per_night": 2200,
+            "amenities": ["Free WiFi", "Breakfast", "Parking", "Airport Shuttle"],
+            "image_url": "https://via.placeholder.com/400x300/2ecc71/ffffff?text=Comfort+Inn"
+        },
+        {
+            "name": "Luxury Resort & Spa",
+            "location": f"Beachfront, {destination}",
+            "rating": 5.0,
+            "price_per_night": 8500,
+            "amenities": ["Private Beach", "Infinity Pool", "Fine Dining", "Spa", "Concierge"],
+            "image_url": "https://via.placeholder.com/400x300/e74c3c/ffffff?text=Luxury+Resort"
+        },
+        {
+            "name": "Budget Stay Hotel",
+            "location": f"Downtown {destination}",
+            "rating": 3.5,
+            "price_per_night": 1200,
+            "amenities": ["Free WiFi", "AC", "24/7 Reception"],
+            "image_url": "https://via.placeholder.com/400x300/f39c12/ffffff?text=Budget+Stay"
+        },
+        {
+            "name": "Heritage Boutique Hotel",
+            "location": f"Old City, {destination}",
+            "rating": 4.8,
+            "price_per_night": 4500,
+            "amenities": ["Cultural Tours", "Rooftop Restaurant", "Free WiFi", "Heritage Architecture"],
+            "image_url": "https://via.placeholder.com/400x300/9b59b6/ffffff?text=Heritage+Boutique"
+        }
+    ]
+    
+    # Filter by rating and price
+    filtered = []
+    for hotel in hotels_db:
+        if min_rating and hotel["rating"] < min_rating:
+            continue
+        if max_price and hotel["price_per_night"] > max_price:
+            continue
+        
+        hotel_copy = hotel.copy()
+        hotel_copy["id"] = f"HT{uuid.uuid4().hex[:8].upper()}"
+        hotel_copy["destination"] = destination
+        hotel_copy["currency"] = "INR"
+        hotel_copy["rooms_available"] = 12
+        filtered.append(hotel_copy)
+    
+    return filtered if filtered else hotels_db[:3]  # Return at least 3 hotels
+
+
+def _generate_mock_restaurants(destination: str, cuisine: Optional[str], budget: Optional[str]):
+    """Generate mock restaurant data"""
+    restaurants_db = [
+        {
+            "name": "Spice Junction",
+            "cuisine": "Indian",
+            "specialty_dish": "Butter Chicken with Naan",
+            "timings": "11:00 AM - 11:00 PM",
+            "average_cost": 800,
+            "budget_category": "mid-range",
+            "rating": 4.3,
+            "distance": "1.2 km",
+            "image_url": "https://via.placeholder.com/400x300/e67e22/ffffff?text=Spice+Junction"
+        },
+        {
+            "name": "Ocean Breeze Seafood",
+            "cuisine": "Seafood",
+            "specialty_dish": "Grilled Lobster",
+            "timings": "12:00 PM - 10:00 PM",
+            "average_cost": 2500,
+            "budget_category": "fine-dining",
+            "rating": 4.7,
+            "distance": "3.5 km",
+            "image_url": "https://via.placeholder.com/400x300/3498db/ffffff?text=Ocean+Breeze"
+        },
+        {
+            "name": "Quick Bites Cafe",
+            "cuisine": "Continental",
+            "specialty_dish": "Club Sandwich",
+            "timings": "8:00 AM - 8:00 PM",
+            "average_cost": 350,
+            "budget_category": "budget",
+            "rating": 3.9,
+            "distance": "0.5 km",
+            "image_url": "https://via.placeholder.com/400x300/95a5a6/ffffff?text=Quick+Bites"
+        },
+        {
+            "name": "Maharaja's Kitchen",
+            "cuisine": "Indian",
+            "specialty_dish": "Royal Thali",
+            "timings": "12:00 PM - 11:00 PM",
+            "average_cost": 1200,
+            "budget_category": "mid-range",
+            "rating": 4.5,
+            "distance": "2.0 km",
+            "image_url": "https://via.placeholder.com/400x300/c0392b/ffffff?text=Maharaja+Kitchen"
+        },
+        {
+            "name": "Pasta Paradise",
+            "cuisine": "Italian",
+            "specialty_dish": "Truffle Pasta",
+            "timings": "11:00 AM - 10:00 PM",
+            "average_cost": 1800,
+            "budget_category": "fine-dining",
+            "rating": 4.6,
+            "distance": "4.0 km",
+            "image_url": "https://via.placeholder.com/400x300/27ae60/ffffff?text=Pasta+Paradise"
+        }
+    ]
+    
+    # Filter by cuisine and budget
+    filtered = []
+    for restaurant in restaurants_db:
+        if cuisine and restaurant["cuisine"].lower() != cuisine.lower():
+            continue
+        if budget and restaurant["budget_category"] != budget:
+            continue
+        
+        restaurant_copy = restaurant.copy()
+        restaurant_copy["id"] = f"RS{uuid.uuid4().hex[:8].upper()}"
+        restaurant_copy["destination"] = destination
+        restaurant_copy["currency"] = "INR"
+        filtered.append(restaurant_copy)
+    
+    return filtered if filtered else restaurants_db[:4]
+
+
+@api_router.post("/search/flights")
+async def search_flights(query: FlightSearchQuery):
+    """Search for available flights"""
+    flights = _generate_mock_flights(query.origin, query.destination, query.date, query.travelers)
+    return {"flights": flights, "count": len(flights)}
+
+
+@api_router.post("/search/hotels")
+async def search_hotels(query: HotelSearchQuery):
+    """Search for available hotels"""
+    hotels = _generate_mock_hotels(
+        query.destination, 
+        query.check_in, 
+        query.check_out, 
+        query.guests,
+        query.min_rating,
+        query.max_price
+    )
+    return {"hotels": hotels, "count": len(hotels)}
+
+
+@api_router.post("/search/restaurants")
+async def search_restaurants(query: RestaurantSearchQuery):
+    """Search for restaurants"""
+    restaurants = _generate_mock_restaurants(query.destination, query.cuisine, query.budget)
+    return {"restaurants": restaurants, "count": len(restaurants)}
+
+
+@api_router.post("/service/bookings")
+async def create_service_booking(
+    booking: ServiceBookingCreate,
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new service booking (flight/hotel/restaurant)"""
+    db: Session = next(get_db())
+    
+    booking_ref = f"{booking.service_type[:2].upper()}{uuid.uuid4().hex[:8].upper()}"
+    
+    db_booking = ServiceBookingModel(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        service_type=booking.service_type,
+        service_json=booking.service_json,
+        total_price=booking.total_price,
+        currency=booking.currency,
+        booking_ref=booking_ref,
+        status="Pending",
+        created_at=datetime.now(timezone.utc)
+    )
+    
+    db.add(db_booking)
+    db.commit()
+    db.refresh(db_booking)
+    
+    return ServiceBookingResponse(
+        id=db_booking.id,
+        user_id=db_booking.user_id,
+        service_type=db_booking.service_type,
+        service_json=db_booking.service_json,
+        total_price=db_booking.total_price,
+        currency=db_booking.currency,
+        booking_ref=db_booking.booking_ref,
+        status=db_booking.status,
+        created_at=db_booking.created_at
+    )
+
+
+@api_router.get("/service/bookings")
+async def get_service_bookings(current_user: User = Depends(get_current_user)):
+    """Get all service bookings for the current user"""
+    db: Session = next(get_db())
+    
+    bookings = db.query(ServiceBookingModel).filter(
+        ServiceBookingModel.user_id == current_user.id
+    ).order_by(ServiceBookingModel.created_at.desc()).all()
+    
+    return {
+        "bookings": [
+            ServiceBookingResponse(
+                id=b.id,
+                user_id=b.user_id,
+                service_type=b.service_type,
+                service_json=b.service_json,
+                total_price=b.total_price,
+                currency=b.currency,
+                booking_ref=b.booking_ref,
+                status=b.status,
+                created_at=b.created_at
+            )
+            for b in bookings
+        ]
+    }
+
 
 # Weather API endpoint
 @api_router.get("/weather/{location}")

@@ -20,6 +20,13 @@ import Receipt from "./pages/Receipt";
 import MyBookings from "./pages/MyBookings";
 import MyReceipts from "./pages/MyReceipts";
 import TripHistory from "./pages/TripHistory";
+import Flights from "./pages/Flights";
+import Hotels from "./pages/Hotels";
+import Restaurants from "./pages/Restaurants";
+import DestinationDetails from "./pages/DestinationDetails";
+import FlightDetail from "./pages/FlightDetail";
+import HotelDetail from "./pages/HotelDetail";
+import RestaurantDetail from "./pages/RestaurantDetail";
 
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
@@ -60,9 +67,16 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/explore" element={<Explore />} />
+            <Route path="/destination/:destinationName" element={<DestinationDetails />} />
+            <Route path="/destination/:destinationName/flights/:flightId" element={<FlightDetail />} />
+            <Route path="/destination/:destinationName/hotels/:hotelId" element={<HotelDetail />} />
+            <Route path="/destination/:destinationName/restaurants/:restaurantId" element={<RestaurantDetail />} />
             <Route path="/planner" element={<TripPlanner />} />
             <Route path="/checklist" element={<Checklist />} />
             <Route path="/contact" element={<Contact />} />
+            <Route path="/flights" element={<Flights />} />
+            <Route path="/hotels" element={<Hotels />} />
+            <Route path="/restaurants" element={<Restaurants />} />
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

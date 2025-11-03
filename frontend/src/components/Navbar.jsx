@@ -28,6 +28,14 @@ const Navbar = () => {
   const navLinks = [
     { name: 'Home', path: '/' },
     { name: 'Explore', path: '/explore' },
+    { 
+      name: 'Services', 
+      dropdown: [
+        { name: 'Flights', path: '/flights' },
+        { name: 'Hotels', path: '/hotels' },
+        { name: 'Restaurants', path: '/restaurants' }
+      ]
+    },
     { name: 'Gallery', path: '/gallery' },
     { name: 'Planner', path: '/planner' },
     { name: 'Checklist', path: '/checklist' },
@@ -56,24 +64,54 @@ const Navbar = () => {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-8">
-            {navLinks.map((link) => (
-              <Link
-                key={link.path}
-                to={link.path}
-                className={`text-sm font-medium transition-all duration-200 relative ${
-                  isActive(link.path)
-                    ? 'text-[#0077b6]'
-                    : scrolled
-                    ? 'text-gray-700 hover:text-[#0077b6]'
-                    : 'text-gray-800 hover:text-[#0077b6]'
-                }`}
-              >
-                {link.name}
-                {isActive(link.path) && (
-                  <span className="absolute -bottom-1 left-0 w-full h-0.5 bg-gradient-to-r from-[#0077b6] to-[#48cae4] rounded-full" />
-                )}
-              </Link>
-            ))}
+            {navLinks.map((link) => {
+              if (link.dropdown) {
+                // Render dropdown for Services
+                return (
+                  <DropdownMenu key={link.name}>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className={`text-sm font-medium transition-all duration-200 ${
+                          scrolled
+                            ? 'text-gray-700 hover:text-[#0077b6]'
+                            : 'text-gray-800 hover:text-[#0077b6]'
+                        }`}
+                      >
+                        {link.name}
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {link.dropdown.map((item) => (
+                        <DropdownMenuItem key={item.path} asChild>
+                          <Link to={item.path} className="cursor-pointer">
+                            {item.name}
+                          </Link>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              }
+              
+              return (
+                <Link
+                  key={link.path}
+                  to={link.path}
+                  className={`text-sm font-medium transition-all duration-200 relative ${
+                    isActive(link.path)
+                      ? 'text-[#0077b6]'
+                      : scrolled
+                      ? 'text-gray-700 hover:text-[#0077b6]'
+                      : 'text-gray-800 hover:text-[#0077b6]'
+                  }`}
+                >
+                  {link.name}
+                  {isActive(link.path) && (
+                    <span className="absolute -bottom-1 left-0 w-full h-0.5 bg-gradient-to-r from-[#0077b6] to-[#48cae4] rounded-full" />
+                  )}
+                </Link>
+              );
+            })}
             {isAuthenticated && (
               <Link
                 to="/trip-history"
@@ -181,20 +219,47 @@ const Navbar = () => {
         }`}
       >
         <div className="px-4 pt-2 pb-6 space-y-2 bg-white/95 backdrop-blur-md shadow-lg">
-          {navLinks.map((link) => (
-            <Link
-              key={link.path}
-              to={link.path}
-              onClick={() => setIsOpen(false)}
-              className={`block px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
-                isActive(link.path)
-                  ? 'bg-gradient-to-r from-[#0077b6] to-[#48cae4] text-white'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              {link.name}
-            </Link>
-          ))}
+          {navLinks.map((link) => {
+            if (link.dropdown) {
+              // Render dropdown items directly in mobile menu
+              return (
+                <div key={link.name}>
+                  <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">
+                    {link.name}
+                  </div>
+                  {link.dropdown.map((item) => (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => setIsOpen(false)}
+                      className={`block px-4 py-3 rounded-lg font-medium transition-all duration-200 ml-4 ${
+                        isActive(item.path)
+                          ? 'bg-gradient-to-r from-[#0077b6] to-[#48cae4] text-white'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {item.name}
+                    </Link>
+                  ))}
+                </div>
+              );
+            }
+            
+            return (
+              <Link
+                key={link.path}
+                to={link.path}
+                onClick={() => setIsOpen(false)}
+                className={`block px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+                  isActive(link.path)
+                    ? 'bg-gradient-to-r from-[#0077b6] to-[#48cae4] text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                {link.name}
+              </Link>
+            );
+          })}
           {isAuthenticated && (
             <>
               <Link

@@ -240,11 +240,12 @@ const Explore = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {filteredDestinations.map((destination) => {
             const weather = mockWeather[destination.name] || { temp: 25, condition: "Pleasant", humidity: 60 };
+            const destinationSlug = destination.name.toLowerCase().replace(/\s+/g, '-');
             return (
               <Card
                 key={destination.id}
                 className="overflow-hidden group cursor-pointer border-0 shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2"
-                onClick={() => openModal(destination)}
+                onClick={() => navigate(`/destination/${destinationSlug}`)}
               >
                 <div className="relative h-64 overflow-hidden">
                   <img
@@ -278,8 +279,12 @@ const Explore = () => {
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-[#0077b6] to-[#48cae4] hover:from-[#005f8f] hover:to-[#3ab5d9] text-white rounded-full"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/destination/${destinationSlug}`);
+                      }}
                     >
-                      View Details
+                      Explore
                     </Button>
                   </div>
                 </div>
