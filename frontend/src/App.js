@@ -2,8 +2,10 @@ import React from "react";
 import "./App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { AIProvider } from "./contexts/AIContext";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
+import ChatBot from "./components/ChatBot";
 import Home from "./pages/Home";
 import Explore from "./pages/Explore";
 import TripPlanner from "./pages/TripPlanner";
@@ -64,40 +66,43 @@ const PublicRoute = ({ children }) => {
 function App() {
   return (
     <AuthProvider>
-      <div className="App">
-        <BrowserRouter>
-          <Navbar />
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/explore" element={<Explore />} />
-            <Route path="/destination/:destinationName" element={<DestinationDetails />} />
-            <Route path="/destination/:destinationName/flights/:flightId" element={<FlightDetail />} />
-            <Route path="/destination/:destinationName/hotels/:hotelId" element={<HotelDetail />} />
-            <Route path="/destination/:destinationName/restaurants/:restaurantId" element={<RestaurantDetail />} />
-            <Route path="/planner" element={<TripPlanner />} />
-            <Route path="/checklist" element={<Checklist />} />
-            <Route path="/contact" element={<Contact />} />
-            <Route path="/flights" element={<Flights />} />
-            <Route path="/hotels" element={<Hotels />} />
-            <Route path="/restaurants" element={<Restaurants />} />
-            <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-            <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/gallery" element={<ProtectedRoute><Gallery /></ProtectedRoute>} />
-            <Route path="/payment" element={<Payment />} />
-            <Route path="/receipt" element={<Receipt />} />
-            <Route path="/ticket" element={<Ticket />} />
-            <Route path="/ticket/verify" element={<TicketVerify />} />
-            <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
-            <Route path="/my-receipts" element={<ProtectedRoute><MyReceipts /></ProtectedRoute>} />
-            <Route path="/trip-history" element={<ProtectedRoute><TripHistory /></ProtectedRoute>} />
-            <Route path="/assistant" element={<Assistant />} />
-          </Routes>
-          <Footer />
-          <Toaster />
-        </BrowserRouter>
-      </div>
+      <AIProvider>
+        <div className="App">
+          <BrowserRouter>
+            <Navbar />
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/explore" element={<Explore />} />
+              <Route path="/destination/:destinationName" element={<DestinationDetails />} />
+              <Route path="/destination/:destinationName/flights/:flightId" element={<FlightDetail />} />
+              <Route path="/destination/:destinationName/hotels/:hotelId" element={<HotelDetail />} />
+              <Route path="/destination/:destinationName/restaurants/:restaurantId" element={<RestaurantDetail />} />
+              <Route path="/planner" element={<TripPlanner />} />
+              <Route path="/checklist" element={<Checklist />} />
+              <Route path="/contact" element={<Contact />} />
+              <Route path="/flights" element={<Flights />} />
+              <Route path="/hotels" element={<Hotels />} />
+              <Route path="/restaurants" element={<Restaurants />} />
+              <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+              <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
+              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/gallery" element={<ProtectedRoute><Gallery /></ProtectedRoute>} />
+              <Route path="/payment" element={<Payment />} />
+              <Route path="/receipt" element={<Receipt />} />
+              <Route path="/ticket" element={<Ticket />} />
+              <Route path="/ticket/verify" element={<TicketVerify />} />
+              <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
+              <Route path="/my-receipts" element={<ProtectedRoute><MyReceipts /></ProtectedRoute>} />
+              <Route path="/trip-history" element={<ProtectedRoute><TripHistory /></ProtectedRoute>} />
+              <Route path="/assistant" element={<Assistant />} />
+            </Routes>
+            <Footer />
+            <ChatBot />
+            <Toaster />
+          </BrowserRouter>
+        </div>
+      </AIProvider>
     </AuthProvider>
   );
 }

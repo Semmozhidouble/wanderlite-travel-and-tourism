@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import { destinations } from '../data/mock';
+import { mockFlights, mockHotels, mockRestaurants } from '../data/services';
 import { slugify } from '../lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -31,9 +32,8 @@ const DestinationDetails = () => {
   const fetchDestinationDetails = async () => {
     setLoading(true);
     try {
-      // Fetch destination info
-      const response = await axios.get('/api/destinations');
-      const dest = response.data.find(
+      // Find destination from mock data
+      const dest = destinations.find(
         d => slugify(d.name) === destinationName.toLowerCase()
       );
       
@@ -41,6 +41,9 @@ const DestinationDetails = () => {
         setDestination(dest);
         // Pre-fetch service counts for this destination
         fetchServiceCounts(dest.name);
+      } else {
+        // If not found in main destinations, show "Destination not found"
+        console.error('Destination not found:', destinationName);
       }
     } catch (error) {
       console.error('Error fetching destination:', error);
@@ -51,33 +54,22 @@ const DestinationDetails = () => {
 
   const fetchServiceCounts = async (destName) => {
     try {
-      // Fetch flights
-      const flightsRes = await axios.post('/api/search/flights', {
-        origin: 'Delhi',
-        destination: destName,
-        date: new Date().toISOString().split('T')[0],
-        travelers: 1
-      });
-      
-      // Fetch hotels
-      const hotelsRes = await axios.post('/api/search/hotels', {
-        destination: destName,
-        guests: 1
-      });
-      
-      // Fetch restaurants
-      const restaurantsRes = await axios.post('/api/search/restaurants', {
-        destination: destName
-      });
-
+      // Use mock data instead of API calls for reliability
       setServices({
-        flights: flightsRes.data.flights || [],
-        hotels: hotelsRes.data.hotels || [],
-        restaurants: restaurantsRes.data.restaurants || [],
+        flights: mockFlights.map(flight => ({ ...flight, destination: destName })),
+        hotels: mockHotels.map(hotel => ({ ...hotel, destination: destName, location: `${hotel.location}, ${destName}` })),
+        restaurants: mockRestaurants.map(restaurant => ({ ...restaurant, destination: destName })),
         activities: destination?.activities || []
       });
     } catch (error) {
-      console.error('Error fetching services:', error);
+      console.error('Error setting services:', error);
+      // Fallback to empty arrays
+      setServices({
+        flights: [],
+        hotels: [],
+        restaurants: [],
+        activities: []
+      });
     }
   };
 
@@ -138,7 +130,7 @@ const DestinationDetails = () => {
               {destination.category}
             </Badge>
             <h1 className="text-5xl font-bold text-white mb-2">{destination.name}</h1>
-            <p className="text-xl text-white/90 mb-4">{destination.short_description}</p>
+            <p className="text-xl text-white/90 mb-4">{destination.shortDescription}</p>
             <div className="flex items-center gap-6 text-white/90">
               <div className="flex items-center gap-2">
                 <MapPin className="w-5 h-5" />

@@ -15,6 +15,7 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { MapPin, Cloud, Droplets, Calendar, Activity, X, Search, CheckCircle, Users, IndianRupee } from 'lucide-react';
 import { MessageCircle } from 'lucide-react';
+import MapView from '../components/MapView';
 
 const Explore = () => {
   const navigate = useNavigate();
@@ -236,6 +237,11 @@ const Explore = () => {
               </Button>
             ))}
           </div>
+        </div>
+
+        {/* Interactive Map */}
+        <div className="mb-8">
+          <MapView />
         </div>
 
         {/* Destination Grid */}

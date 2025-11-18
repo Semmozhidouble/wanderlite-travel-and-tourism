@@ -96,6 +96,114 @@ export const destinations = [
     weather: "Tropical, 25-31°C",
     attractions: ["Malé City", "Banana Reef", "Vaadhoo Island", "HP Reef", "Artificial Beach"],
     activities: ["Snorkeling", "Diving", "Island hopping", "Spa treatments", "Sunset fishing"]
+  },
+  {
+    id: 9,
+    name: "Seaside Resort",
+    category: "Beach",
+    image: "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800&q=80",
+    shortDescription: "Luxury beachfront resort in Goa",
+    description: "Experience the perfect beachside getaway at our luxury resort. Located on the beautiful beaches of Calangute, Goa, offering pristine sands, azure waters, and world-class amenities.",
+    bestTime: "November to February",
+    weather: "Tropical, 25-32°C",
+    attractions: ["Private Beach", "Beach Volleyball", "Water Sports", "Spa & Wellness", "Poolside Bar"],
+    activities: ["Beach lounging", "Water sports", "Spa treatments", "Sunset viewing"]
+  },
+  {
+    id: 10,
+    name: "Heritage Palace",
+    category: "Heritage",
+    image: "https://images.unsplash.com/photo-1539650116574-75c0c6d73fb6?w=800&q=80",
+    shortDescription: "Royal heritage hotel in Jaipur",
+    description: "Step into royalty at our magnificent heritage palace. Located in the heart of Jaipur, this former royal residence offers an authentic taste of Rajasthani culture and luxury.",
+    bestTime: "October to March",
+    weather: "Arid, 15-35°C",
+    attractions: ["Palace Grounds", "Royal Gardens", "Heritage Museum", "Traditional Architecture", "Royal Dining"],
+    activities: ["Heritage tours", "Cultural shows", "Royal dining", "Horse riding"]
+  },
+  {
+    id: 11,
+    name: "Mountain View Hotel",
+    category: "Mountain",
+    image: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80",
+    shortDescription: "Scenic mountain resort in Bangalore",
+    description: "Escape to tranquility at our mountain view hotel. Perched on the hills near Bangalore, offering breathtaking views of the Western Ghats and cool mountain air.",
+    bestTime: "September to May",
+    weather: "Pleasant, 15-28°C",
+    attractions: ["Mountain Trails", "Valley Views", "Garden Resort", "Adventure Sports", "Bird Watching"],
+    activities: ["Trekking", "Nature walks", "Photography", "Adventure sports"]
+  },
+  {
+    id: 12,
+    name: "Spice Garden",
+    category: "Culinary",
+    image: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80",
+    shortDescription: "Authentic Indian cuisine in Mumbai",
+    description: "Discover the rich flavors of India at Spice Garden. Located in the bustling heart of Mumbai, we offer traditional recipes passed down through generations.",
+    bestTime: "October to March",
+    weather: "Tropical, 20-35°C",
+    attractions: ["Traditional Kitchen", "Spice Market Tour", "Cooking Classes", "Rooftop Dining", "Cultural Shows"],
+    activities: ["Cooking classes", "Spice tours", "Traditional dining", "Cultural experiences"]
+  },
+  {
+    id: 13,
+    name: "Royal Feast",
+    category: "Culinary",
+    image: "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=800&q=80",
+    shortDescription: "Fine dining experience in New Delhi",
+    description: "Indulge in royal cuisine at Royal Feast. Located in New Delhi, we specialize in Mughlai and North Indian delicacies in a regal ambiance.",
+    bestTime: "October to April",
+    weather: "Continental, 5-40°C",
+    attractions: ["Royal Kitchen", "Historical Setting", "Live Music", "Traditional Decor", "Chef's Table"],
+    activities: ["Fine dining", "Cultural shows", "Wine tasting", "Culinary workshops"]
+  },
+  {
+    id: 14,
+    name: "Coastal Kitchen",
+    category: "Culinary",
+    image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80",
+    shortDescription: "Fresh seafood restaurant in Chennai",
+    description: "Savor the taste of the sea at Coastal Kitchen. Located in Chennai, we serve the freshest seafood with authentic South Indian flavors and coastal specialties.",
+    bestTime: "November to February",
+    weather: "Tropical, 24-35°C",
+    attractions: ["Fresh Seafood Market", "Beachside Dining", "Traditional Recipes", "Ocean View", "Local Fishing"],
+    activities: ["Seafood tasting", "Beach dining", "Fishing experience", "Coastal tours"]
+  },
+  {
+    id: 15,
+    name: "Historical Fort",
+    category: "Heritage",
+    image: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=800&q=80",
+    shortDescription: "Ancient fort complex in Agra",
+    description: "Explore the magnificent historical fort in Agra. This UNESCO World Heritage site showcases the grandeur of Mughal architecture and rich history spanning centuries.",
+    bestTime: "October to March",
+    weather: "Semi-arid, 10-45°C",
+    attractions: ["Mughal Architecture", "Historical Monuments", "Royal Gardens", "Museums", "Light & Sound Show"],
+    activities: ["Historical tours", "Photography", "Cultural exploration", "Sunset viewing"]
+  },
+  {
+    id: 16,
+    name: "Golden Temple",
+    category: "Heritage",
+    image: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=800&q=80",
+    shortDescription: "Sacred Sikh temple in Amritsar",
+    description: "Experience spiritual bliss at the Golden Temple. This sacred Sikh shrine in Amritsar is renowned for its golden architecture, spiritual atmosphere, and community kitchen.",
+    bestTime: "October to March",
+    weather: "Continental, 0-40°C",
+    attractions: ["Golden Architecture", "Sacred Pool", "Spiritual Experience", "Community Kitchen", "Historical Museum"],
+    activities: ["Spiritual visits", "Community service", "Photography", "Cultural learning"]
+  },
+  {
+    id: 17,
+    name: "Backwater Paradise",
+    category: "Nature",
+    image: "https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=800&q=80",
+    shortDescription: "Serene backwaters in Kochi",
+    description: "Discover the tranquil beauty of Kerala's backwaters in Kochi. Cruise through palm-fringed canals, traditional villages, and lush green landscapes on a houseboat.",
+    bestTime: "October to March",
+    weather: "Tropical, 23-33°C",
+    attractions: ["Houseboat Cruises", "Traditional Villages", "Palm Groves", "Fishing Communities", "Sunset Views"],
+    activities: ["Houseboat stays", "Village tours", "Fishing", "Bird watching"]
   }
 ];
 

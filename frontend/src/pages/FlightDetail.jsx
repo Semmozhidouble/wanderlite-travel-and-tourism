@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { 
   Plane, Clock, Users, Luggage, CalendarIcon, ChevronRight, 
-  Home, User, Mail, Phone, CreditCard, MapPin, Info, CheckCircle
+  Home, User, Mail, Phone, CreditCard, MapPin, Info, CheckCircle, AlertCircle
 } from 'lucide-react';
 import { format } from 'date-fns';
 import axios from 'axios';
@@ -43,6 +43,24 @@ const FlightDetail = () => {
   });
   
   const [loading, setLoading] = useState(false);
+
+  // Early return if flight data is not available
+  if (!flight) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
+        <Card className="max-w-md w-full mx-4">
+          <CardContent className="p-8 text-center">
+            <Plane className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Flight Not Found</h2>
+            <p className="text-gray-600 mb-6">The flight you're looking for could not be found.</p>
+            <Button onClick={() => navigate('/explore')} className="w-full">
+              Back to Explore
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // Generate available seats
   const generateSeats = () => {
@@ -256,12 +274,12 @@ const FlightDetail = () => {
                     Cancellation Policy
                   </h3>
                   <div className="flex items-start gap-2 bg-yellow-50 p-3 rounded-lg">
-                    {flight.refund_policy.includes('Free') ? (
+                    {flight?.refund_policy?.includes('Free') ? (
                       <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                     ) : (
                       <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                     )}
-                    <p className="text-sm text-gray-700">{flight.refund_policy}</p>
+                    <p className="text-sm text-gray-700">{flight?.refund_policy || 'Refund policy not available'}</p>
                   </div>
                 </div>
               </CardContent>
