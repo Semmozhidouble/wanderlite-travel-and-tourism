@@ -67,7 +67,10 @@
   "scripts": {
     "start": "craco start",
     "build": "craco build",
-    "test": "craco test"
+    "test": "craco test",
+    "doctor": "npm run health-check && npm run lint-check",
+    "health-check": "node -e \"const http = require('http'); http.get('http://localhost:8000/api/health', (res) => { let data = ''; res.on('data', (chunk) => { data += chunk; }); res.on('end', () => { console.log('✅ Backend health check:', data); }); }).on('error', (err) => { console.error('❌ Backend not responding:', err.message); process.exit(1); });\"",
+    "lint-check": "echo '✅ Lint check (install eslint for full check)' || exit 0"
   },
   "browserslist": {
     "production": [

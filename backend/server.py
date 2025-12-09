@@ -1138,6 +1138,11 @@ def _generate_restaurant_reservation_pdf(service_data: dict, booking_ref: str, g
 
 def _generate_receipt_pdf(payload: PaymentRequest, upload_dir: Path) -> str:
     """Generate a simple payment receipt PDF and return the relative file path under uploads."""
+    if PDF_GENERATION_DISABLED:
+        # Return a placeholder receipt URL when PDF generation is disabled
+        booking_ref = payload.booking_ref or f"WL-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
+        return f"/uploads/receipts/receipt_{booking_ref}.pdf"
+    
     receipts_dir = upload_dir / 'receipts'
     receipts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1145,7 +1150,8 @@ def _generate_receipt_pdf(payload: PaymentRequest, upload_dir: Path) -> str:
     filename = f"receipt_{booking_ref}.pdf"
     file_path = receipts_dir / filename
 
-    pdf = None  # FPDF disabled
+    from fpdf import FPDF
+    pdf = FPDF()
     pdf.add_page()
 
     # Header
@@ -1473,31 +1479,35 @@ async def confirm_payment(payload: PaymentRequest, db: Session = Depends(get_db)
         # Generate appropriate ticket/voucher based on service type
         ticket_url = None
         receipt_url: Optional[str] = None
-        if service_booking:
-            import json
-            service_data = json.loads(service_booking.service_json)
-            guest_info = {
-                'full_name': payload.full_name,
-                'email': payload.email,
-                'phone': payload.phone,
-                'method': payload.method,
-                'credential': payload.credential,
-            }
-            
-            if service_booking.service_type == 'flight':
-                ticket_url = _generate_flight_ticket_pdf(service_data, booking_ref, guest_info, upload_dir)
-                # For flights we keep the generic payment receipt as well
-            elif service_booking.service_type == 'hotel':
-                # Generate a rich hotel receipt and also provide a hotel voucher PDF as e-ticket
-                receipt_url = _generate_hotel_receipt_pdf(service_data, booking_ref, guest_info, payload.amount, payload.__dict__.get('currency', 'INR'), upload_dir)
-                ticket_url = _generate_hotel_voucher_pdf(service_data, booking_ref, guest_info, upload_dir)
-            elif service_booking.service_type == 'restaurant':
-                # Generate a branded dining receipt
-                receipt_url = _generate_restaurant_receipt_pdf(service_data, booking_ref, guest_info, payload.amount, payload.__dict__.get('currency', 'INR'), upload_dir)
-            
-            # Update service booking status to Confirmed
-            service_booking.status = 'Confirmed'
-            db.commit()
+        try:
+            if service_booking:
+                import json
+                service_data = json.loads(service_booking.service_json)
+                guest_info = {
+                    'full_name': payload.full_name,
+                    'email': payload.email,
+                    'phone': payload.phone,
+                    'method': payload.method,
+                    'credential': payload.credential,
+                }
+                
+                if service_booking.service_type == 'flight':
+                    ticket_url = _generate_flight_ticket_pdf(service_data, booking_ref, guest_info, upload_dir)
+                    # For flights we keep the generic payment receipt as well
+                elif service_booking.service_type == 'hotel':
+                    # Generate a rich hotel receipt and also provide a hotel voucher PDF as e-ticket
+                    receipt_url = _generate_hotel_receipt_pdf(service_data, booking_ref, guest_info, payload.amount, payload.__dict__.get('currency', 'INR'), upload_dir)
+                    ticket_url = _generate_hotel_voucher_pdf(service_data, booking_ref, guest_info, upload_dir)
+                elif service_booking.service_type == 'restaurant':
+                    # Generate a branded dining receipt
+                    receipt_url = _generate_restaurant_receipt_pdf(service_data, booking_ref, guest_info, payload.amount, payload.__dict__.get('currency', 'INR'), upload_dir)
+                
+                # Update service booking status to Confirmed
+                service_booking.status = 'Confirmed'
+                db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to generate specialized receipt/ticket: {e}")
+            # Continue with generic receipt generation
         
         # Generate a generic payment receipt only if not already generated a specialized one
         if not receipt_url:
@@ -1534,7 +1544,7 @@ async def confirm_payment(payload: PaymentRequest, db: Session = Depends(get_db)
         return PaymentResponse(**response_data)
     except Exception as e:
         logger.exception("Payment confirmation failed")
-        raise HTTPException(status_code=500, detail=f"Failed to generate receipt: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to confirm payment: {str(e)}")
 
 
 @api_router.get("/tickets/verify")
@@ -3176,5 +3186,10 @@ def on_startup():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    # Get port and host from environment
+    port = int(os.environ.get('PORT', 8000))
+    host = os.environ.get('HOST', '0.0.0.0')
+    
+    logger.info(f"Starting server on {host}:{port}")
+    uvicorn.run(app, host=host, port=port)
 

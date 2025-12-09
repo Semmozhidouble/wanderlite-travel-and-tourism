@@ -83,7 +83,7 @@ const Contact = () => {
             Get in Touch
           </h1>
           <p className="text-gray-600 text-lg max-w-2xl mx-auto">
-            Have questions or feedback? We'd love to hear from you. Send us a message and we'll
+            Have questions or feedback? We&apos;d love to hear from you. Send us a message and we&apos;ll
             respond as soon as possible.
           </p>
         </div>
@@ -144,7 +144,7 @@ const Contact = () => {
                 </div>
                 <h3 className="text-2xl font-bold text-gray-800">Message Sent!</h3>
                 <p className="text-gray-600 text-center">
-                  Thank you for reaching out. We'll get back to you shortly.
+                  Thank you for reaching out. We&apos;ll get back to you shortly.
                 </p>
               </div>
             ) : (

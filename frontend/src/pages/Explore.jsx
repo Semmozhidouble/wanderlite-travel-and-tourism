@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { destinations as mockDestinations, mockWeather } from '../data/mock';
-import axios from 'axios';
+import { mockWeather } from '../data/mock';
+import destinationService from '../services/destinationService';
+import api from '../services/api';
 import { jsPDF } from 'jspdf';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -13,9 +14,10 @@ import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { MapPin, Cloud, Droplets, Calendar, Activity, X, Search, CheckCircle, Users, IndianRupee } from 'lucide-react';
+import { MapPin, Cloud, Droplets, Calendar, Activity, X, Search, CheckCircle, Users, IndianRupee, AlertCircle } from 'lucide-react';
 import { MessageCircle } from 'lucide-react';
 import MapView from '../components/MapView';
+import { useToast } from '../components/Toast';
 
 const Explore = () => {
   const navigate = useNavigate();
@@ -26,6 +28,7 @@ const Explore = () => {
   const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState(false);
   const [destinations, setDestinations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [bookingData, setBookingData] = useState({
     destination: '',
@@ -36,25 +39,42 @@ const Explore = () => {
   });
   const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [bookingLoading, setBookingLoading] = useState(false);
+  const toast = useToast();
 
-  const categories = ['All', 'Beach', 'Heritage'];
+  const categories = ['All', 'Beach', 'Heritage', 'Mountain', 'Adventure'];
 
   useEffect(() => {
-    const fetchDestinations = async () => {
-      try {
-        const response = await axios.get('/api/destinations');
-        setDestinations(response.data);
-      } catch (error) {
-        console.error('Error fetching destinations:', error);
-        // Fallback to mock data
-        setDestinations(mockDestinations);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchDestinations();
   }, []);
+
+  const fetchDestinations = async (forceRefresh = false) => {
+    setLoading(true);
+    setError(null);
+    
+    const result = await destinationService.getAllDestinations({ forceRefresh });
+    
+    if (result.success) {
+      setDestinations(result.destinations || []);
+      
+      // Show info if using cached or mock data
+      if (result.fromCache) {
+        console.info('Using cached destinations data');
+      } else if (result.fromMock) {
+        toast?.warning?.('Using offline data. Some features may be limited.');
+      }
+    } else {
+      setError(result.error);
+      setDestinations([]);
+      
+      if (result.networkError) {
+        toast?.error?.('Network error. Please check your connection.');
+      } else {
+        toast?.error?.(result.error || 'Failed to load destinations');
+      }
+    }
+    
+    setLoading(false);
+  };
 
   const filteredDestinations = destinations.filter((dest) => {
     const matchesCategory = selectedCategory === 'All' || dest.category === selectedCategory;
@@ -100,33 +120,65 @@ const Explore = () => {
   const handleBookingSubmit = async (e) => {
     e.preventDefault();
     
-    if (!bookingData.startDate || !bookingData.endDate || !bookingData.budgetRange) {
-      alert('Please fill all required fields');
+    // Validation
+    if (!bookingData.destination || !bookingData.startDate || !bookingData.endDate || !bookingData.budgetRange) {
+      const missing = [];
+      if (!bookingData.destination) missing.push('Destination');
+      if (!bookingData.startDate) missing.push('Start Date');
+      if (!bookingData.endDate) missing.push('End Date');
+      if (!bookingData.budgetRange) missing.push('Budget Range');
+      toast?.warning?.(`Please fill all required fields: ${missing.join(', ')}`);
+      return;
+    }
+
+    // Validate dates
+    if (bookingData.startDate >= bookingData.endDate) {
+      toast?.warning?.('End date must be after start date');
       return;
     }
 
     setBookingLoading(true);
     try {
       const selectedBudget = budgetRanges.find(r => r.value === bookingData.budgetRange);
+      if (!selectedBudget) {
+        toast?.error?.('Invalid budget range selected');
+        return;
+      }
+
       const avgPrice = (selectedBudget.min + selectedBudget.max) / 2;
 
-      const response = await axios.post('/api/bookings', {
-        destination: bookingData.destination,
-        start_date: bookingData.startDate.toISOString(),
-        end_date: bookingData.endDate.toISOString(),
-        travelers: bookingData.travelers,
-        package_type: selectedBudget.label,
-        total_price: avgPrice,
+      // Ensure dates are proper ISO strings
+      const startDateISO = bookingData.startDate instanceof Date 
+        ? bookingData.startDate.toISOString() 
+        : new Date(bookingData.startDate).toISOString();
+      const endDateISO = bookingData.endDate instanceof Date 
+        ? bookingData.endDate.toISOString() 
+        : new Date(bookingData.endDate).toISOString();
+
+      const bookingPayload = {
+        destination: bookingData.destination.trim(),
+        start_date: startDateISO,
+        end_date: endDateISO,
+        travelers: parseInt(bookingData.travelers) || 1,
+        package_type: selectedBudget.label.trim(),
+        total_price: parseFloat(avgPrice),
         currency: 'INR'
-      });
+      };
+
+      console.log('Sending booking payload:', bookingPayload);
+
+      const response = await api.post('/api/bookings', bookingPayload);
 
       // Navigate directly to Payment page with booking info
       setConfirmedBooking(response.data);
       setIsBookingModalOpen(false);
+      toast?.success?.('Booking created successfully!');
       navigate('/payment', { state: { booking: response.data } });
     } catch (error) {
       console.error('Booking failed:', error);
-      alert(error.response?.data?.detail || 'Booking failed. Please try again.');
+      console.error('Error response:', error.response?.data);
+      const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message || 'Failed to create booking. Please try again.';
+      toast?.error?.(errorMsg);
     } finally {
       setBookingLoading(false);
     }
@@ -198,11 +250,27 @@ const Explore = () => {
         {loading && (
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#0077b6]"></div>
+            <p className="ml-4 text-gray-600">Loading destinations...</p>
           </div>
         )}
 
-        {/* Content - only show when not loading */}
-        {!loading && (
+        {/* Error State with Retry */}
+        {!loading && error && (
+          <div className="flex flex-col items-center justify-center py-20 space-y-4">
+            <AlertCircle className="w-16 h-16 text-red-500" />
+            <h3 className="text-xl font-semibold text-gray-800">Failed to Load Destinations</h3>
+            <p className="text-gray-600">{error}</p>
+            <Button
+              onClick={() => fetchDestinations(true)}
+              className="bg-gradient-to-r from-[#0077b6] to-[#48cae4] hover:from-[#005f8f] hover:to-[#3ab5d9] text-white"
+            >
+              Retry
+            </Button>
+          </div>
+        )}
+
+        {/* Content - only show when not loading and no error */}
+        {!loading && !error && (
         <div>
         {/* Search and Filter Bar */}
         <div className="mb-12 space-y-6">

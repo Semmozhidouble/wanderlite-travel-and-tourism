@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { jsPDF } from 'jspdf';
 import { CheckCircle, IndianRupee, Mail, Phone, User } from 'lucide-react';
 
 const Payment = () => {
@@ -16,7 +15,6 @@ const Payment = () => {
   const bookingId = location.state?.bookingId;
   const bookingRef = location.state?.bookingRef;
   const amount = location.state?.amount;
-  const currency = location.state?.currency;
   const serviceType = location.state?.serviceType;
   const serviceDetails = location.state?.serviceDetails;
 
@@ -117,8 +115,7 @@ const Payment = () => {
         amount: Number(paymentAmount) || 0,
       });
 
-  const BASE = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8001';
-  const res = await axios.post(`${BASE}/api/payment/confirm`, payload);
+  const res = await api.post('/api/payment/confirm', payload);
       setSuccess(true);
       setSubmitting(false);
       navigate('/receipt', { 

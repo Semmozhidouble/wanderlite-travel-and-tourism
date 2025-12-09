@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import authService from '../services/authService';
 
 const AuthContext = createContext();
 
@@ -14,36 +14,20 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(localStorage.getItem('token'));
-
-  // Set up axios defaults
-  useEffect(() => {
-    // Configure base URL from environment (fallback to localhost:8000)
-    const base = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
-    axios.defaults.baseURL = base;
-
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    } else {
-      delete axios.defaults.headers.common['Authorization'];
-    }
-  }, [token]);
 
   // Check if user is logged in on app start
   useEffect(() => {
     const checkAuth = async () => {
-      const storedToken = localStorage.getItem('token');
-      if (storedToken) {
-        try {
-          setToken(storedToken);
-          const me = await axios.get('/api/auth/me', {
-            headers: { Authorization: `Bearer ${storedToken}` }
-          });
-          setUser(me.data);
-        } catch (error) {
-          localStorage.removeItem('token');
-          setToken(null);
-          setUser(null);
+      // Check if token exists
+      const token = authService.getToken();
+      if (token) {
+        // Try to fetch user details
+        const result = await authService.fetchCurrentUser();
+        if (result.success) {
+          setUser(result.user);
+        } else {
+          // Token invalid or expired, clear it
+          authService.logout();
         }
       }
       setLoading(false);
@@ -53,60 +37,34 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    try {
-      const response = await axios.post('/api/auth/login', { email, password });
-      const { access_token } = response.data;
-      localStorage.setItem('token', access_token);
-      setToken(access_token);
-      try {
-        const me = await axios.get('/api/auth/me', {
-          headers: { Authorization: `Bearer ${access_token}` }
-        });
-        setUser(me.data);
-      } catch (_) {
-        setUser({ email });
-      }
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.response?.data?.detail || 'Login failed' };
+    const result = await authService.login(email, password);
+    if (result.success) {
+      setUser(result.user);
     }
+    return result;
   };
 
   const signup = async (email, username, password) => {
-    try {
-      const response = await axios.post('/api/auth/signup', { email, username, password });
-      const { access_token } = response.data;
-      localStorage.setItem('token', access_token);
-      setToken(access_token);
-      try {
-        const me = await axios.get('/api/auth/me', {
-          headers: { Authorization: `Bearer ${access_token}` }
-        });
-        setUser(me.data);
-      } catch (_) {
-        setUser({ email, username });
-      }
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.response?.data?.detail || 'Signup failed' };
+    const result = await authService.signup(email, username, password);
+    if (result.success) {
+      setUser(result.user);
     }
+    return result;
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    setToken(null);
+    authService.logout();
     setUser(null);
-    delete axios.defaults.headers.common['Authorization'];
   };
 
   const value = {
     user,
-    token,
     loading,
     login,
     signup,
     logout,
-    isAuthenticated: !!user
+    isAuthenticated: !!user,
+    token: authService.getToken()
   };
 
   return (

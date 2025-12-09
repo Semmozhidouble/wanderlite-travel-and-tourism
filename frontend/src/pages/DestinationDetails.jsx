@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { destinations } from '../data/mock';
+import destinationService from '../services/destinationService';
 import { mockFlights, mockHotels, mockRestaurants } from '../data/services';
 import { slugify } from '../lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -9,14 +9,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Badge } from '../components/ui/badge';
 import { 
   MapPin, Cloud, Droplets, Star, Plane, Hotel, UtensilsCrossed, 
-  Activity, ChevronRight, Home, Calendar, Users, IndianRupee 
+  Activity, ChevronRight, Home, Calendar, Users, IndianRupee, AlertCircle 
 } from 'lucide-react';
+import { useToast } from '../components/Toast';
+import MapView from '../components/MapView';
 
 const DestinationDetails = () => {
   const { destinationName } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const [destination, setDestination] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [services, setServices] = useState({
     flights: [],
@@ -31,25 +35,32 @@ const DestinationDetails = () => {
 
   const fetchDestinationDetails = async () => {
     setLoading(true);
-    try {
-      // Find destination from mock data
-      const dest = destinations.find(
-        d => slugify(d.name) === destinationName.toLowerCase()
-      );
+    setError(null);
+    
+    // Try to find destination by name/slug
+    const result = await destinationService.getDestinationByName(destinationName);
+    
+    if (result.success && result.destination) {
+      setDestination(result.destination);
+      // Pre-fetch service counts for this destination
+      fetchServiceCounts(result.destination.name);
       
-      if (dest) {
-        setDestination(dest);
-        // Pre-fetch service counts for this destination
-        fetchServiceCounts(dest.name);
-      } else {
-        // If not found in main destinations, show "Destination not found"
-        console.error('Destination not found:', destinationName);
+      // Show info if using cached data
+      if (result.fromCache || result.fromSession) {
+        console.info('Using cached destination data');
+      } else if (result.fromMock) {
+        toast?.info?.('Viewing offline destination data');
       }
-    } catch (error) {
-      console.error('Error fetching destination:', error);
-    } finally {
-      setLoading(false);
+    } else {
+      setError(result.error || 'Destination not found');
+      setDestination(null);
+      
+      if (result.status !== 404) {
+        toast?.error?.(result.error || 'Failed to load destination');
+      }
     }
+    
+    setLoading(false);
   };
 
   const fetchServiceCounts = async (destName) => {
@@ -81,18 +92,32 @@ const DestinationDetails = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center pt-24">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <p className="text-gray-600">Loading destination details...</p>
+        </div>
       </div>
     );
   }
 
-  if (!destination) {
+  if (!destination || error) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Destination not found</h2>
-          <Button onClick={() => navigate('/explore')}>Back to Explore</Button>
+      <div className="min-h-screen flex items-center justify-center pt-24">
+        <div className="text-center space-y-4">
+          <AlertCircle className="w-16 h-16 text-gray-400 mx-auto" />
+          <h2 className="text-2xl font-bold text-gray-900">{error || 'Destination not found'}</h2>
+          <p className="text-gray-600">
+            The destination you're looking for doesn't exist or couldn't be loaded.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <Button onClick={() => navigate('/explore')} variant="default">
+              Back to Explore
+            </Button>
+            <Button onClick={() => fetchDestinationDetails()} variant="outline">
+              Retry
+            </Button>
+          </div>
         </div>
       </div>
     );
