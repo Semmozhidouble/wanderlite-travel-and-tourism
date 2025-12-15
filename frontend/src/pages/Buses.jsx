@@ -177,12 +177,28 @@ const Buses = () => {
                     value={fromSearch}
                     onChange={(e) => {
                       setFromSearch(e.target.value);
-                      setFromCity(null);
+                      // Auto-select if exact match found
+                      const exactMatch = cities.find(c => c.name.toLowerCase() === e.target.value.toLowerCase());
+                      if (exactMatch) {
+                        setFromCity(exactMatch);
+                      } else {
+                        setFromCity(null);
+                      }
                       setShowFromDropdown(true);
                     }}
                     onFocus={() => setShowFromDropdown(true)}
+                    onBlur={() => {
+                      // Auto-select first match on blur if no city selected
+                      if (!fromCity && fromSearch) {
+                        const match = cities.find(c => c.name.toLowerCase().startsWith(fromSearch.toLowerCase()));
+                        if (match) {
+                          setFromCity(match);
+                          setFromSearch(match.name);
+                        }
+                      }
+                    }}
                     placeholder="Enter city name"
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-0 outline-none text-gray-800 transition"
+                    className={`w-full px-4 py-3 border-2 rounded-xl focus:ring-0 outline-none text-gray-800 transition ${fromCity ? 'border-green-500 bg-green-50' : 'border-gray-200 focus:border-orange-500'}`}
                   />
                   {fromCity && (
                     <button
@@ -243,12 +259,28 @@ const Buses = () => {
                     value={toSearch}
                     onChange={(e) => {
                       setToSearch(e.target.value);
-                      setToCity(null);
+                      // Auto-select if exact match found
+                      const exactMatch = cities.find(c => c.name.toLowerCase() === e.target.value.toLowerCase());
+                      if (exactMatch) {
+                        setToCity(exactMatch);
+                      } else {
+                        setToCity(null);
+                      }
                       setShowToDropdown(true);
                     }}
                     onFocus={() => setShowToDropdown(true)}
+                    onBlur={() => {
+                      // Auto-select first match on blur if no city selected
+                      if (!toCity && toSearch) {
+                        const match = cities.find(c => c.name.toLowerCase().startsWith(toSearch.toLowerCase()));
+                        if (match) {
+                          setToCity(match);
+                          setToSearch(match.name);
+                        }
+                      }
+                    }}
                     placeholder="Enter city name"
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-0 outline-none text-gray-800 transition"
+                    className={`w-full px-4 py-3 border-2 rounded-xl focus:ring-0 outline-none text-gray-800 transition ${toCity ? 'border-green-500 bg-green-50' : 'border-gray-200 focus:border-red-500'}`}
                   />
                   {toCity && (
                     <button

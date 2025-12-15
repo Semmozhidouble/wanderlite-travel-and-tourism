@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
 import logging
+import random
 from pathlib import Path
 PDF_GENERATION_DISABLED = True  # Disable PDF generation due to dependency issues
 from pydantic import BaseModel, Field, ConfigDict
@@ -619,6 +620,210 @@ class BusLiveTrackingModel(Base):
     eta_mins = Column(Integer, nullable=True)
 
 
+# =============================
+# Flight Booking Models (Advanced MakeMyTrip-style)
+# =============================
+
+class AirportModel(Base):
+    __tablename__ = "airports"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(10), unique=True, nullable=False)  # IATA code (e.g., DEL, BOM)
+    name = Column(String(200), nullable=False)
+    city = Column(String(100), nullable=False)
+    country = Column(String(100), nullable=False)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    timezone = Column(String(50), nullable=True)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AirlineModel(Base):
+    __tablename__ = "airlines"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(10), unique=True, nullable=False)  # Airline code (e.g., 6E, AI)
+    name = Column(String(200), nullable=False)
+    logo_url = Column(String(500), nullable=True)
+    country = Column(String(100), nullable=True)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AircraftModel(Base):
+    __tablename__ = "aircraft"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    model = Column(String(50), nullable=False)  # A320, B737, etc.
+    manufacturer = Column(String(100), nullable=True)
+    total_seats = Column(Integer, nullable=False)
+    economy_seats = Column(Integer, nullable=False)
+    business_seats = Column(Integer, default=0)
+    seat_layout = Column(String(20), nullable=False)  # 3-3 for economy, 2-2 for business
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class FlightRouteModel(Base):
+    __tablename__ = "flight_routes"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    origin_airport_id = Column(Integer, ForeignKey("airports.id"), nullable=False)
+    destination_airport_id = Column(Integer, ForeignKey("airports.id"), nullable=False)
+    distance_km = Column(Integer, nullable=True)
+    estimated_duration_mins = Column(Integer, nullable=True)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class FlightModel(Base):
+    __tablename__ = "flights"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    flight_number = Column(String(20), nullable=False)
+    airline_id = Column(Integer, ForeignKey("airlines.id"), nullable=False)
+    route_id = Column(Integer, ForeignKey("flight_routes.id"), nullable=False)
+    aircraft_id = Column(Integer, ForeignKey("aircraft.id"), nullable=False)
+    departure_time = Column(String(10), nullable=False)  # HH:MM format
+    arrival_time = Column(String(10), nullable=False)
+    duration_mins = Column(Integer, nullable=False)
+    stops = Column(Integer, default=0)
+    stop_airports = Column(String(200), nullable=True)  # Comma-separated airport codes
+    days_of_week = Column(String(20), nullable=False)  # 1,2,3,4,5,6,7 (Mon-Sun)
+    base_price_economy = Column(Float, nullable=False)
+    base_price_business = Column(Float, nullable=True)
+    is_overnight = Column(Integer, default=0)
+    is_refundable = Column(Integer, default=1)
+    baggage_allowance = Column(String(100), default="15kg check-in, 7kg cabin")
+    meal_included = Column(Integer, default=0)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class FlightScheduleModel(Base):
+    __tablename__ = "flight_schedules"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    flight_id = Column(Integer, ForeignKey("flights.id"), nullable=False)
+    flight_date = Column(String(20), nullable=False)  # YYYY-MM-DD
+    departure_datetime = Column(DateTime, nullable=False)
+    arrival_datetime = Column(DateTime, nullable=False)
+    status = Column(String(30), default="scheduled")  # scheduled, boarding, departed, in_air, landed, cancelled, delayed
+    delay_mins = Column(Integer, default=0)
+    gate = Column(String(10), nullable=True)
+    terminal = Column(String(10), nullable=True)
+    economy_price = Column(Float, nullable=False)
+    business_price = Column(Float, nullable=True)
+    available_economy = Column(Integer, nullable=False)
+    available_business = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class FlightSeatModel(Base):
+    __tablename__ = "flight_seats"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    aircraft_id = Column(Integer, ForeignKey("aircraft.id"), nullable=False)
+    seat_number = Column(String(10), nullable=False)  # 1A, 12F, etc.
+    seat_class = Column(String(20), nullable=False)  # economy, business
+    seat_type = Column(String(20), nullable=False)  # window, middle, aisle
+    row_number = Column(Integer, nullable=False)
+    column_letter = Column(String(2), nullable=False)  # A, B, C, D, E, F
+    is_extra_legroom = Column(Integer, default=0)
+    is_emergency_exit = Column(Integer, default=0)
+    is_reclinable = Column(Integer, default=1)
+    price_modifier = Column(Float, default=0)  # Extra charge for premium seats
+    is_active = Column(Integer, default=1)
+
+
+class FlightSeatAvailabilityModel(Base):
+    __tablename__ = "flight_seat_availability"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    schedule_id = Column(Integer, ForeignKey("flight_schedules.id"), nullable=False)
+    seat_id = Column(Integer, ForeignKey("flight_seats.id"), nullable=False)
+    status = Column(String(20), default="available")  # available, locked, booked, blocked
+    locked_by = Column(String(36), nullable=True)
+    locked_until = Column(DateTime, nullable=True)
+
+
+class FlightBookingModel(Base):
+    __tablename__ = "flight_bookings"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    booking_reference = Column(String(20), unique=True, nullable=False)
+    pnr = Column(String(10), unique=True, nullable=False)
+    trip_type = Column(String(20), nullable=False)  # one_way, round_trip, multi_city
+    booking_status = Column(String(30), default="confirmed")  # confirmed, cancelled, completed
+    total_amount = Column(Float, nullable=False)
+    discount_amount = Column(Float, default=0)
+    final_amount = Column(Float, nullable=False)
+    payment_status = Column(String(20), default="pending")
+    payment_method = Column(String(50), nullable=True)
+    transaction_id = Column(String(100), nullable=True)
+    contact_name = Column(String(200), nullable=False)
+    contact_email = Column(String(200), nullable=False)
+    contact_phone = Column(String(20), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    cancelled_at = Column(DateTime, nullable=True)
+    refund_amount = Column(Float, nullable=True)
+
+
+class FlightSegmentModel(Base):
+    """Each segment of a flight booking (for multi-city or round trips)"""
+    __tablename__ = "flight_segments"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    booking_id = Column(Integer, ForeignKey("flight_bookings.id"), nullable=False)
+    segment_order = Column(Integer, nullable=False)  # 1, 2, 3 for multi-city
+    schedule_id = Column(Integer, ForeignKey("flight_schedules.id"), nullable=False)
+    segment_type = Column(String(20), nullable=False)  # outbound, return, multi_city
+    segment_pnr = Column(String(10), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class FlightPassengerModel(Base):
+    __tablename__ = "flight_passengers"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    booking_id = Column(Integer, ForeignKey("flight_bookings.id"), nullable=False)
+    segment_id = Column(Integer, ForeignKey("flight_segments.id"), nullable=False)
+    seat_id = Column(Integer, ForeignKey("flight_seats.id"), nullable=True)
+    passenger_type = Column(String(20), nullable=False)  # adult, child, infant
+    title = Column(String(10), nullable=False)  # Mr, Mrs, Ms, Master, Miss
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=False)
+    date_of_birth = Column(String(20), nullable=True)
+    gender = Column(String(10), nullable=False)
+    nationality = Column(String(100), nullable=True)
+    passport_number = Column(String(50), nullable=True)
+    seat_number = Column(String(10), nullable=True)
+    seat_class = Column(String(20), nullable=False)  # economy, business
+    meal_preference = Column(String(50), nullable=True)  # veg, non_veg, vegan, etc.
+    special_assistance = Column(String(200), nullable=True)
+    ticket_number = Column(String(20), nullable=True)
+    boarding_pass_issued = Column(Integer, default=0)
+    fare_amount = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class FlightTrackingModel(Base):
+    __tablename__ = "flight_tracking"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    schedule_id = Column(Integer, ForeignKey("flight_schedules.id"), nullable=False)
+    current_latitude = Column(Float, nullable=True)
+    current_longitude = Column(Float, nullable=True)
+    altitude_ft = Column(Integer, nullable=True)
+    speed_kmph = Column(Float, nullable=True)
+    heading = Column(Integer, nullable=True)
+    status = Column(String(30), default="scheduled")  # scheduled, boarding, taxiing, departed, in_air, landing, landed
+    progress_percentage = Column(Float, default=0)
+    last_updated = Column(DateTime, default=datetime.utcnow)
+    eta_mins = Column(Integer, nullable=True)
+
+
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
@@ -1073,6 +1278,176 @@ class BusTicketResponse(BaseModel):
 
 class BusCancellationRequest(BaseModel):
     booking_id: str
+    reason: Optional[str] = None
+
+
+# =============================
+# Flight Booking Pydantic Schemas
+# =============================
+
+class AirportCreate(BaseModel):
+    code: str
+    name: str
+    city: str
+    country: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    timezone: Optional[str] = None
+
+class AirportResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+    city: str
+    country: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+class AirlineCreate(BaseModel):
+    code: str
+    name: str
+    logo_url: Optional[str] = None
+    country: Optional[str] = None
+
+class AirlineResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+    logo_url: Optional[str] = None
+    country: Optional[str] = None
+
+class AircraftCreate(BaseModel):
+    model: str
+    manufacturer: Optional[str] = None
+    total_seats: int
+    economy_seats: int
+    business_seats: int = 0
+    seat_layout: str  # e.g., "3-3"
+
+class FlightRouteCreate(BaseModel):
+    origin_airport_id: int
+    destination_airport_id: int
+    distance_km: Optional[int] = None
+    estimated_duration_mins: Optional[int] = None
+
+class FlightCreate(BaseModel):
+    flight_number: str
+    airline_id: int
+    route_id: int
+    aircraft_id: int
+    departure_time: str
+    arrival_time: str
+    duration_mins: int
+    stops: int = 0
+    stop_airports: Optional[str] = None
+    days_of_week: str
+    base_price_economy: float
+    base_price_business: Optional[float] = None
+    is_overnight: int = 0
+    is_refundable: int = 1
+    baggage_allowance: str = "15kg check-in, 7kg cabin"
+    meal_included: int = 0
+
+class FlightSearchRequest(BaseModel):
+    origin_code: str  # Airport code or city
+    destination_code: str
+    departure_date: str  # YYYY-MM-DD
+    return_date: Optional[str] = None  # For round trip
+    trip_type: str = "one_way"  # one_way, round_trip, multi_city
+    passengers_adult: int = 1
+    passengers_child: int = 0
+    passengers_infant: int = 0
+    seat_class: str = "economy"  # economy, business
+
+class FlightSearchResult(BaseModel):
+    schedule_id: int
+    flight_id: int
+    flight_number: str
+    airline_id: int
+    airline_name: str
+    airline_code: str
+    airline_logo: Optional[str] = None
+    origin_code: str
+    origin_city: str
+    origin_airport: str
+    destination_code: str
+    destination_city: str
+    destination_airport: str
+    departure_time: str
+    arrival_time: str
+    departure_datetime: str
+    arrival_datetime: str
+    duration_mins: int
+    stops: int
+    stop_airports: Optional[str] = None
+    is_overnight: int
+    is_refundable: int
+    baggage_allowance: str
+    meal_included: int
+    economy_price: float
+    business_price: Optional[float] = None
+    available_economy: int
+    available_business: int
+    gate: Optional[str] = None
+    terminal: Optional[str] = None
+    status: str
+
+class FlightSeatResponse(BaseModel):
+    id: int
+    seat_number: str
+    seat_class: str
+    seat_type: str
+    row_number: int
+    column_letter: str
+    is_extra_legroom: int
+    is_emergency_exit: int
+    price_modifier: float
+    status: str
+    price: float
+
+class FlightSeatLockRequest(BaseModel):
+    schedule_id: int
+    seat_ids: List[int]
+
+class FlightPassengerInfo(BaseModel):
+    seat_id: Optional[int] = None
+    passenger_type: str  # adult, child, infant
+    title: str  # Mr, Mrs, Ms, Master, Miss
+    first_name: str
+    last_name: str
+    date_of_birth: Optional[str] = None
+    gender: str
+    nationality: Optional[str] = None
+    passport_number: Optional[str] = None
+    meal_preference: Optional[str] = None
+    special_assistance: Optional[str] = None
+    seat_class: str = "economy"
+
+class FlightBookingCreate(BaseModel):
+    trip_type: str  # one_way, round_trip, multi_city
+    segments: List[dict]  # [{schedule_id, passengers: [FlightPassengerInfo]}]
+    contact_name: str
+    contact_email: str
+    contact_phone: str
+    payment_method: str = "mock"
+
+class FlightTicketResponse(BaseModel):
+    id: int
+    booking_reference: str
+    pnr: str
+    trip_type: str
+    booking_status: str
+    total_amount: float
+    final_amount: float
+    payment_status: str
+    contact_name: str
+    contact_email: str
+    contact_phone: str
+    segments: List[dict]
+    created_at: str
+
+class FlightCancellationRequest(BaseModel):
+    booking_id: int
     reason: Optional[str] = None
 
 
@@ -6004,6 +6379,1173 @@ app.include_router(bus_router)
 
 
 # =============================
+# Flight Booking Router (Advanced MakeMyTrip-style)
+# =============================
+flight_router = APIRouter(prefix="/api/flight", tags=["Flights"])
+
+
+def generate_pnr_flight():
+    """Generate a 6-character alphanumeric PNR"""
+    import random
+    import string
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choices(chars, k=6))
+
+
+def generate_booking_reference():
+    """Generate booking reference"""
+    import random
+    return f"WL{random.randint(100000, 999999)}"
+
+
+def generate_ticket_number():
+    """Generate ticket number"""
+    import random
+    return f"{random.randint(100, 999)}-{random.randint(1000000000, 9999999999)}"
+
+
+# Get all airports
+@flight_router.get("/airports")
+async def get_airports(db: Session = Depends(get_db)):
+    """Get all active airports"""
+    airports = db.query(AirportModel).filter(AirportModel.is_active == 1).order_by(AirportModel.city).all()
+    return [
+        {
+            "id": a.id,
+            "code": a.code,
+            "name": a.name,
+            "city": a.city,
+            "country": a.country,
+            "latitude": a.latitude,
+            "longitude": a.longitude
+        }
+        for a in airports
+    ]
+
+
+# Get all airlines
+@flight_router.get("/airlines")
+async def get_airlines(db: Session = Depends(get_db)):
+    """Get all active airlines"""
+    airlines = db.query(AirlineModel).filter(AirlineModel.is_active == 1).order_by(AirlineModel.name).all()
+    return [
+        {
+            "id": a.id,
+            "code": a.code,
+            "name": a.name,
+            "logo_url": a.logo_url,
+            "country": a.country
+        }
+        for a in airlines
+    ]
+
+
+# Search flights
+@flight_router.post("/search")
+async def search_flights(
+    search: FlightSearchRequest,
+    db: Session = Depends(get_db)
+):
+    """Search for available flights"""
+    # Find origin airport(s) by code or city
+    origin_airports = db.query(AirportModel).filter(
+        (AirportModel.code == search.origin_code.upper()) |
+        (AirportModel.city.ilike(f"%{search.origin_code}%"))
+    ).all()
+    
+    if not origin_airports:
+        raise HTTPException(status_code=404, detail="Origin airport/city not found")
+    
+    # Find destination airport(s)
+    dest_airports = db.query(AirportModel).filter(
+        (AirportModel.code == search.destination_code.upper()) |
+        (AirportModel.city.ilike(f"%{search.destination_code}%"))
+    ).all()
+    
+    if not dest_airports:
+        raise HTTPException(status_code=404, detail="Destination airport/city not found")
+    
+    origin_ids = [a.id for a in origin_airports]
+    dest_ids = [a.id for a in dest_airports]
+    
+    # Get day of week (1=Monday, 7=Sunday)
+    from datetime import datetime as dt
+    search_date = dt.strptime(search.departure_date, "%Y-%m-%d")
+    day_of_week = search_date.isoweekday()
+    
+    # Find routes
+    routes = db.query(FlightRouteModel).filter(
+        FlightRouteModel.origin_airport_id.in_(origin_ids),
+        FlightRouteModel.destination_airport_id.in_(dest_ids),
+        FlightRouteModel.is_active == 1
+    ).all()
+    
+    if not routes:
+        return {"outbound": [], "return": []}
+    
+    route_ids = [r.id for r in routes]
+    
+    # Find flights operating on this day
+    flights = db.query(FlightModel).filter(
+        FlightModel.route_id.in_(route_ids),
+        FlightModel.is_active == 1
+    ).all()
+    
+    # Filter by day of week
+    valid_flights = [f for f in flights if str(day_of_week) in f.days_of_week.split(',')]
+    
+    # Check for schedules on this date
+    results = []
+    for flight in valid_flights:
+        schedule = db.query(FlightScheduleModel).filter(
+            FlightScheduleModel.flight_id == flight.id,
+            FlightScheduleModel.flight_date == search.departure_date
+        ).first()
+        
+        # If no schedule exists yet, create one dynamically
+        if not schedule:
+            # Get route and aircraft info
+            route = db.query(FlightRouteModel).filter(FlightRouteModel.id == flight.route_id).first()
+            aircraft = db.query(AircraftModel).filter(AircraftModel.id == flight.aircraft_id).first()
+            
+            # Create departure and arrival datetime
+            dep_hour, dep_min = map(int, flight.departure_time.split(':'))
+            arr_hour, arr_min = map(int, flight.arrival_time.split(':'))
+            
+            dep_datetime = search_date.replace(hour=dep_hour, minute=dep_min)
+            arr_datetime = search_date.replace(hour=arr_hour, minute=arr_min)
+            if flight.is_overnight:
+                arr_datetime = arr_datetime + timedelta(days=1)
+            
+            schedule = FlightScheduleModel(
+                flight_id=flight.id,
+                flight_date=search.departure_date,
+                departure_datetime=dep_datetime,
+                arrival_datetime=arr_datetime,
+                status="scheduled",
+                economy_price=flight.base_price_economy,
+                business_price=flight.base_price_business,
+                available_economy=aircraft.economy_seats if aircraft else 150,
+                available_business=aircraft.business_seats if aircraft else 12,
+                gate=f"G{random.randint(1, 30)}",
+                terminal=f"T{random.randint(1, 3)}"
+            )
+            db.add(schedule)
+            db.commit()
+            db.refresh(schedule)
+        
+        # Get related info
+        airline = db.query(AirlineModel).filter(AirlineModel.id == flight.airline_id).first()
+        route = db.query(FlightRouteModel).filter(FlightRouteModel.id == flight.route_id).first()
+        origin = db.query(AirportModel).filter(AirportModel.id == route.origin_airport_id).first()
+        dest = db.query(AirportModel).filter(AirportModel.id == route.destination_airport_id).first()
+        
+        # Check availability based on class
+        if search.seat_class == "economy" and schedule.available_economy < (search.passengers_adult + search.passengers_child):
+            continue
+        if search.seat_class == "business" and (schedule.available_business or 0) < (search.passengers_adult + search.passengers_child):
+            continue
+        
+        results.append({
+            "schedule_id": schedule.id,
+            "flight_id": flight.id,
+            "flight_number": flight.flight_number,
+            "airline_id": airline.id,
+            "airline_name": airline.name,
+            "airline_code": airline.code,
+            "airline_logo": airline.logo_url,
+            "origin_code": origin.code,
+            "origin_city": origin.city,
+            "origin_airport": origin.name,
+            "destination_code": dest.code,
+            "destination_city": dest.city,
+            "destination_airport": dest.name,
+            "departure_time": flight.departure_time,
+            "arrival_time": flight.arrival_time,
+            "departure_datetime": schedule.departure_datetime.isoformat(),
+            "arrival_datetime": schedule.arrival_datetime.isoformat(),
+            "duration_mins": flight.duration_mins,
+            "stops": flight.stops,
+            "stop_airports": flight.stop_airports,
+            "is_overnight": flight.is_overnight,
+            "is_refundable": flight.is_refundable,
+            "baggage_allowance": flight.baggage_allowance,
+            "meal_included": flight.meal_included,
+            "economy_price": schedule.economy_price,
+            "business_price": schedule.business_price,
+            "available_economy": schedule.available_economy,
+            "available_business": schedule.available_business or 0,
+            "gate": schedule.gate,
+            "terminal": schedule.terminal,
+            "status": schedule.status
+        })
+    
+    # Sort by price
+    results.sort(key=lambda x: x["economy_price"] if search.seat_class == "economy" else (x["business_price"] or 99999))
+    
+    response = {"outbound": results, "return": []}
+    
+    # Handle return flights for round trip
+    if search.trip_type == "round_trip" and search.return_date:
+        # Swap origin and destination for return search
+        return_search = FlightSearchRequest(
+            origin_code=search.destination_code,
+            destination_code=search.origin_code,
+            departure_date=search.return_date,
+            trip_type="one_way",
+            passengers_adult=search.passengers_adult,
+            passengers_child=search.passengers_child,
+            passengers_infant=search.passengers_infant,
+            seat_class=search.seat_class
+        )
+        return_results = await search_flights(return_search, db)
+        response["return"] = return_results.get("outbound", [])
+    
+    return response
+
+
+# Get seat layout for a flight schedule
+@flight_router.get("/seats/{schedule_id}")
+async def get_flight_seats(
+    schedule_id: int,
+    seat_class: str = "economy",
+    db: Session = Depends(get_db)
+):
+    """Get seat layout and availability for a flight schedule"""
+    schedule = db.query(FlightScheduleModel).filter(FlightScheduleModel.id == schedule_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    
+    flight = db.query(FlightModel).filter(FlightModel.id == schedule.flight_id).first()
+    aircraft = db.query(AircraftModel).filter(AircraftModel.id == flight.aircraft_id).first()
+    
+    # Get seats for this aircraft
+    seats = db.query(FlightSeatModel).filter(
+        FlightSeatModel.aircraft_id == aircraft.id,
+        FlightSeatModel.seat_class == seat_class,
+        FlightSeatModel.is_active == 1
+    ).order_by(FlightSeatModel.row_number, FlightSeatModel.column_letter).all()
+    
+    seat_data = []
+    base_price = schedule.economy_price if seat_class == "economy" else (schedule.business_price or schedule.economy_price * 3)
+    
+    for seat in seats:
+        # Check availability
+        availability = db.query(FlightSeatAvailabilityModel).filter(
+            FlightSeatAvailabilityModel.schedule_id == schedule_id,
+            FlightSeatAvailabilityModel.seat_id == seat.id
+        ).first()
+        
+        status = "available"
+        if availability:
+            if availability.status == "booked":
+                status = "booked"
+            elif availability.status == "locked":
+                if availability.locked_until:
+                    lock_time = availability.locked_until
+                    now = datetime.now()
+                    if lock_time > now:
+                        status = "locked"
+                    else:
+                        status = "available"
+            elif availability.status == "blocked":
+                status = "blocked"
+        
+        seat_data.append({
+            "id": seat.id,
+            "seat_number": seat.seat_number,
+            "seat_class": seat.seat_class,
+            "seat_type": seat.seat_type,
+            "row_number": seat.row_number,
+            "column_letter": seat.column_letter,
+            "is_extra_legroom": seat.is_extra_legroom,
+            "is_emergency_exit": seat.is_emergency_exit,
+            "price_modifier": seat.price_modifier,
+            "status": status,
+            "price": base_price + seat.price_modifier
+        })
+    
+    return {
+        "aircraft_model": aircraft.model,
+        "seat_layout": aircraft.seat_layout,
+        "seat_class": seat_class,
+        "base_price": base_price,
+        "total_seats": len(seats),
+        "seats": seat_data
+    }
+
+
+# Lock seats temporarily
+@flight_router.post("/seats/lock")
+async def lock_flight_seats(
+    request: FlightSeatLockRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Temporarily lock selected seats for 7 minutes"""
+    locked_seats = []
+    lock_until = datetime.now() + timedelta(minutes=7)
+    
+    for seat_id in request.seat_ids:
+        existing = db.query(FlightSeatAvailabilityModel).filter(
+            FlightSeatAvailabilityModel.schedule_id == request.schedule_id,
+            FlightSeatAvailabilityModel.seat_id == seat_id
+        ).first()
+        
+        if existing:
+            if existing.status == "booked":
+                raise HTTPException(status_code=400, detail=f"Seat already booked")
+            elif existing.status == "locked" and existing.locked_until and existing.locked_until > datetime.now():
+                if existing.locked_by != current_user.id:
+                    raise HTTPException(status_code=400, detail=f"Seat is temporarily unavailable")
+            existing.status = "locked"
+            existing.locked_by = current_user.id
+            existing.locked_until = lock_until
+        else:
+            availability = FlightSeatAvailabilityModel(
+                schedule_id=request.schedule_id,
+                seat_id=seat_id,
+                status="locked",
+                locked_by=current_user.id,
+                locked_until=lock_until
+            )
+            db.add(availability)
+        
+        locked_seats.append(seat_id)
+    
+    db.commit()
+    return {"locked_seats": locked_seats, "expires_at": lock_until.isoformat()}
+
+
+# Create flight booking
+@flight_router.post("/book")
+async def create_flight_booking(
+    booking: FlightBookingCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a flight booking"""
+    pnr = generate_pnr_flight()
+    booking_ref = generate_booking_reference()
+    
+    total_amount = 0
+    
+    # Validate all segments and calculate total
+    for segment_data in booking.segments:
+        schedule = db.query(FlightScheduleModel).filter(
+            FlightScheduleModel.id == segment_data["schedule_id"]
+        ).first()
+        if not schedule:
+            raise HTTPException(status_code=404, detail="Flight schedule not found")
+        
+        for passenger in segment_data["passengers"]:
+            seat_class = passenger.get("seat_class", "economy")
+            base_price = schedule.economy_price if seat_class == "economy" else (schedule.business_price or schedule.economy_price * 3)
+            
+            # Add seat price modifier if seat selected
+            seat_modifier = 0
+            if passenger.get("seat_id"):
+                seat = db.query(FlightSeatModel).filter(FlightSeatModel.id == passenger["seat_id"]).first()
+                if seat:
+                    seat_modifier = seat.price_modifier
+            
+            # Pricing based on passenger type
+            if passenger["passenger_type"] == "infant":
+                total_amount += (base_price + seat_modifier) * 0.1  # 10% for infants
+            elif passenger["passenger_type"] == "child":
+                total_amount += (base_price + seat_modifier) * 0.75  # 75% for children
+            else:
+                total_amount += base_price + seat_modifier
+    
+    # Add taxes and fees (mock)
+    taxes = total_amount * 0.12  # 12% taxes
+    convenience_fee = 199
+    final_amount = total_amount + taxes + convenience_fee
+    
+    # Create booking
+    new_booking = FlightBookingModel(
+        user_id=current_user.id,
+        booking_reference=booking_ref,
+        pnr=pnr,
+        trip_type=booking.trip_type,
+        booking_status="confirmed",
+        total_amount=total_amount,
+        discount_amount=0,
+        final_amount=final_amount,
+        payment_status="paid",
+        payment_method=booking.payment_method,
+        transaction_id=f"TXN{uuid.uuid4().hex[:12].upper()}",
+        contact_name=booking.contact_name,
+        contact_email=booking.contact_email,
+        contact_phone=booking.contact_phone
+    )
+    db.add(new_booking)
+    db.flush()
+    
+    # Create segments and passengers
+    for idx, segment_data in enumerate(booking.segments):
+        schedule = db.query(FlightScheduleModel).filter(
+            FlightScheduleModel.id == segment_data["schedule_id"]
+        ).first()
+        
+        segment_type = "outbound"
+        if booking.trip_type == "round_trip" and idx == 1:
+            segment_type = "return"
+        elif booking.trip_type == "multi_city":
+            segment_type = "multi_city"
+        
+        segment_pnr = generate_pnr_flight()
+        
+        segment = FlightSegmentModel(
+            booking_id=new_booking.id,
+            segment_order=idx + 1,
+            schedule_id=segment_data["schedule_id"],
+            segment_type=segment_type,
+            segment_pnr=segment_pnr
+        )
+        db.add(segment)
+        db.flush()
+        
+        # Create passengers for this segment
+        for passenger in segment_data["passengers"]:
+            seat_class = passenger.get("seat_class", "economy")
+            base_price = schedule.economy_price if seat_class == "economy" else (schedule.business_price or schedule.economy_price * 3)
+            
+            seat_number = None
+            if passenger.get("seat_id"):
+                seat = db.query(FlightSeatModel).filter(FlightSeatModel.id == passenger["seat_id"]).first()
+                if seat:
+                    seat_number = seat.seat_number
+                    base_price += seat.price_modifier
+                    
+                    # Mark seat as booked
+                    availability = db.query(FlightSeatAvailabilityModel).filter(
+                        FlightSeatAvailabilityModel.schedule_id == segment_data["schedule_id"],
+                        FlightSeatAvailabilityModel.seat_id == passenger["seat_id"]
+                    ).first()
+                    
+                    if availability:
+                        availability.status = "booked"
+                    else:
+                        availability = FlightSeatAvailabilityModel(
+                            schedule_id=segment_data["schedule_id"],
+                            seat_id=passenger["seat_id"],
+                            status="booked"
+                        )
+                        db.add(availability)
+            
+            # Calculate fare
+            fare_amount = base_price
+            if passenger["passenger_type"] == "infant":
+                fare_amount = base_price * 0.1
+            elif passenger["passenger_type"] == "child":
+                fare_amount = base_price * 0.75
+            
+            new_passenger = FlightPassengerModel(
+                booking_id=new_booking.id,
+                segment_id=segment.id,
+                seat_id=passenger.get("seat_id"),
+                passenger_type=passenger["passenger_type"],
+                title=passenger["title"],
+                first_name=passenger["first_name"],
+                last_name=passenger["last_name"],
+                date_of_birth=passenger.get("date_of_birth"),
+                gender=passenger["gender"],
+                nationality=passenger.get("nationality"),
+                passport_number=passenger.get("passport_number"),
+                seat_number=seat_number,
+                seat_class=seat_class,
+                meal_preference=passenger.get("meal_preference"),
+                special_assistance=passenger.get("special_assistance"),
+                ticket_number=generate_ticket_number(),
+                fare_amount=fare_amount
+            )
+            db.add(new_passenger)
+        
+        # Update available seats
+        passenger_count = len([p for p in segment_data["passengers"] if p["passenger_type"] != "infant"])
+        if seat_class == "economy":
+            schedule.available_economy = max(0, schedule.available_economy - passenger_count)
+        else:
+            if schedule.available_business:
+                schedule.available_business = max(0, schedule.available_business - passenger_count)
+    
+    db.commit()
+    
+    return {
+        "booking_id": new_booking.id,
+        "booking_reference": booking_ref,
+        "pnr": pnr,
+        "total_amount": total_amount,
+        "taxes": taxes,
+        "convenience_fee": convenience_fee,
+        "final_amount": final_amount,
+        "status": "confirmed"
+    }
+
+
+# Get booking details
+@flight_router.get("/booking/{booking_id}")
+async def get_flight_booking(
+    booking_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get flight booking details"""
+    booking = db.query(FlightBookingModel).filter(
+        FlightBookingModel.id == booking_id,
+        FlightBookingModel.user_id == current_user.id
+    ).first()
+    
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Get segments with flight details
+    segments = db.query(FlightSegmentModel).filter(
+        FlightSegmentModel.booking_id == booking.id
+    ).order_by(FlightSegmentModel.segment_order).all()
+    
+    segment_data = []
+    for segment in segments:
+        schedule = db.query(FlightScheduleModel).filter(FlightScheduleModel.id == segment.schedule_id).first()
+        flight = db.query(FlightModel).filter(FlightModel.id == schedule.flight_id).first()
+        airline = db.query(AirlineModel).filter(AirlineModel.id == flight.airline_id).first()
+        route = db.query(FlightRouteModel).filter(FlightRouteModel.id == flight.route_id).first()
+        origin = db.query(AirportModel).filter(AirportModel.id == route.origin_airport_id).first()
+        dest = db.query(AirportModel).filter(AirportModel.id == route.destination_airport_id).first()
+        aircraft = db.query(AircraftModel).filter(AircraftModel.id == flight.aircraft_id).first()
+        
+        # Get passengers for this segment
+        passengers = db.query(FlightPassengerModel).filter(
+            FlightPassengerModel.segment_id == segment.id
+        ).all()
+        
+        passenger_data = [{
+            "id": p.id,
+            "passenger_type": p.passenger_type,
+            "title": p.title,
+            "first_name": p.first_name,
+            "last_name": p.last_name,
+            "gender": p.gender,
+            "seat_number": p.seat_number,
+            "seat_class": p.seat_class,
+            "ticket_number": p.ticket_number,
+            "fare_amount": p.fare_amount
+        } for p in passengers]
+        
+        segment_data.append({
+            "segment_id": segment.id,
+            "segment_order": segment.segment_order,
+            "segment_type": segment.segment_type,
+            "segment_pnr": segment.segment_pnr,
+            "flight_number": flight.flight_number,
+            "airline_name": airline.name,
+            "airline_code": airline.code,
+            "airline_logo": airline.logo_url,
+            "aircraft_model": aircraft.model,
+            "origin_code": origin.code,
+            "origin_city": origin.city,
+            "origin_airport": origin.name,
+            "destination_code": dest.code,
+            "destination_city": dest.city,
+            "destination_airport": dest.name,
+            "departure_time": flight.departure_time,
+            "arrival_time": flight.arrival_time,
+            "departure_datetime": schedule.departure_datetime.isoformat(),
+            "arrival_datetime": schedule.arrival_datetime.isoformat(),
+            "duration_mins": flight.duration_mins,
+            "gate": schedule.gate,
+            "terminal": schedule.terminal,
+            "status": schedule.status,
+            "passengers": passenger_data
+        })
+    
+    return {
+        "id": booking.id,
+        "booking_reference": booking.booking_reference,
+        "pnr": booking.pnr,
+        "trip_type": booking.trip_type,
+        "booking_status": booking.booking_status,
+        "total_amount": booking.total_amount,
+        "final_amount": booking.final_amount,
+        "payment_status": booking.payment_status,
+        "contact_name": booking.contact_name,
+        "contact_email": booking.contact_email,
+        "contact_phone": booking.contact_phone,
+        "segments": segment_data,
+        "created_at": booking.created_at.isoformat()
+    }
+
+
+# Get booking by reference (PNR or booking_reference)
+@flight_router.get("/booking/ref/{ref}")
+async def get_flight_booking_by_ref(
+    ref: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get flight booking details by PNR or booking reference"""
+    # Try to find by PNR first
+    booking = db.query(FlightBookingModel).filter(
+        FlightBookingModel.pnr == ref,
+        FlightBookingModel.user_id == current_user.id
+    ).first()
+    
+    # If not found, try booking reference
+    if not booking:
+        booking = db.query(FlightBookingModel).filter(
+            FlightBookingModel.booking_reference == ref,
+            FlightBookingModel.user_id == current_user.id
+        ).first()
+    
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Get segments with flight details
+    segments = db.query(FlightSegmentModel).filter(
+        FlightSegmentModel.booking_id == booking.id
+    ).order_by(FlightSegmentModel.segment_order).all()
+    
+    segment_data = []
+    for segment in segments:
+        schedule = db.query(FlightScheduleModel).filter(FlightScheduleModel.id == segment.schedule_id).first()
+        flight = db.query(FlightModel).filter(FlightModel.id == schedule.flight_id).first()
+        airline = db.query(AirlineModel).filter(AirlineModel.id == flight.airline_id).first()
+        route = db.query(FlightRouteModel).filter(FlightRouteModel.id == flight.route_id).first()
+        origin = db.query(AirportModel).filter(AirportModel.id == route.origin_airport_id).first()
+        dest = db.query(AirportModel).filter(AirportModel.id == route.destination_airport_id).first()
+        aircraft = db.query(AircraftModel).filter(AircraftModel.id == flight.aircraft_id).first()
+        
+        # Get passengers for this segment
+        passengers = db.query(FlightPassengerModel).filter(
+            FlightPassengerModel.segment_id == segment.id
+        ).all()
+        
+        passenger_data = [{
+            "id": p.id,
+            "passenger_type": p.passenger_type,
+            "title": p.title,
+            "first_name": p.first_name,
+            "last_name": p.last_name,
+            "gender": p.gender,
+            "seat_number": p.seat_number,
+            "seat_class": p.seat_class,
+            "ticket_number": p.ticket_number,
+            "fare_amount": p.fare_amount,
+            "meal_preference": p.meal_preference
+        } for p in passengers]
+        
+        segment_data.append({
+            "segment_id": segment.id,
+            "segment_order": segment.segment_order,
+            "segment_type": segment.segment_type,
+            "segment_pnr": segment.segment_pnr,
+            "flight_number": flight.flight_number,
+            "airline_name": airline.name,
+            "airline_code": airline.code,
+            "airline_logo": airline.logo_url,
+            "aircraft_model": aircraft.model,
+            "origin_code": origin.code,
+            "origin_city": origin.city,
+            "origin_airport": origin.name,
+            "destination_code": dest.code,
+            "destination_city": dest.city,
+            "destination_airport": dest.name,
+            "departure_time": flight.departure_time,
+            "arrival_time": flight.arrival_time,
+            "departure_datetime": schedule.departure_datetime.isoformat() if schedule.departure_datetime else None,
+            "arrival_datetime": schedule.arrival_datetime.isoformat() if schedule.arrival_datetime else None,
+            "departure_date": schedule.departure_datetime.strftime("%Y-%m-%d") if schedule.departure_datetime else None,
+            "arrival_date": schedule.arrival_datetime.strftime("%Y-%m-%d") if schedule.arrival_datetime else None,
+            "duration_mins": flight.duration_mins,
+            "gate": schedule.gate,
+            "terminal": schedule.terminal,
+            "status": schedule.status,
+            "passengers": passenger_data,
+            "baggage": "15kg Cabin, 25kg Check-in"
+        })
+    
+    return {
+        "id": booking.id,
+        "booking_reference": booking.booking_reference,
+        "pnr": booking.pnr,
+        "trip_type": booking.trip_type,
+        "booking_status": booking.booking_status,
+        "total_amount": booking.total_amount,
+        "discount_amount": booking.discount_amount,
+        "final_amount": booking.final_amount,
+        "payment_status": booking.payment_status,
+        "payment_method": booking.payment_method,
+        "contact_name": booking.contact_name,
+        "contact_email": booking.contact_email,
+        "contact_phone": booking.contact_phone,
+        "passengers": [p for seg in segment_data for p in seg["passengers"]],
+        "segments": segment_data,
+        "seat_class": segment_data[0]["passengers"][0]["seat_class"] if segment_data and segment_data[0]["passengers"] else "economy",
+        "created_at": booking.created_at.isoformat()
+    }
+
+
+# Get user's flight bookings
+@flight_router.get("/my-bookings")
+async def get_my_flight_bookings(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all flight bookings for the current user"""
+    bookings = db.query(FlightBookingModel).filter(
+        FlightBookingModel.user_id == current_user.id
+    ).order_by(FlightBookingModel.created_at.desc()).all()
+    
+    result = []
+    for booking in bookings:
+        # Get first segment for summary
+        segment = db.query(FlightSegmentModel).filter(
+            FlightSegmentModel.booking_id == booking.id,
+            FlightSegmentModel.segment_order == 1
+        ).first()
+        
+        if segment:
+            schedule = db.query(FlightScheduleModel).filter(FlightScheduleModel.id == segment.schedule_id).first()
+            flight = db.query(FlightModel).filter(FlightModel.id == schedule.flight_id).first()
+            airline = db.query(AirlineModel).filter(AirlineModel.id == flight.airline_id).first()
+            route = db.query(FlightRouteModel).filter(FlightRouteModel.id == flight.route_id).first()
+            origin = db.query(AirportModel).filter(AirportModel.id == route.origin_airport_id).first()
+            dest = db.query(AirportModel).filter(AirportModel.id == route.destination_airport_id).first()
+            
+            passenger_count = db.query(FlightPassengerModel).filter(
+                FlightPassengerModel.booking_id == booking.id
+            ).count()
+            
+            result.append({
+                "id": booking.id,
+                "booking_reference": booking.booking_reference,
+                "pnr": booking.pnr,
+                "trip_type": booking.trip_type,
+                "booking_status": booking.booking_status,
+                "flight_number": flight.flight_number,
+                "airline_name": airline.name,
+                "airline_logo": airline.logo_url,
+                "origin_code": origin.code,
+                "origin_city": origin.city,
+                "destination_code": dest.code,
+                "destination_city": dest.city,
+                "departure_datetime": schedule.departure_datetime.isoformat(),
+                "final_amount": booking.final_amount,
+                "passenger_count": passenger_count,
+                "created_at": booking.created_at.isoformat()
+            })
+    
+    return result
+
+
+# Cancel flight booking
+@flight_router.post("/cancel")
+async def cancel_flight_booking(
+    request: FlightCancellationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Cancel a flight booking with refund calculation"""
+    booking = db.query(FlightBookingModel).filter(
+        FlightBookingModel.id == request.booking_id,
+        FlightBookingModel.user_id == current_user.id
+    ).first()
+    
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if booking.booking_status == "cancelled":
+        raise HTTPException(status_code=400, detail="Booking already cancelled")
+    
+    # Get first segment to check departure time
+    segment = db.query(FlightSegmentModel).filter(
+        FlightSegmentModel.booking_id == booking.id,
+        FlightSegmentModel.segment_order == 1
+    ).first()
+    
+    schedule = db.query(FlightScheduleModel).filter(FlightScheduleModel.id == segment.schedule_id).first()
+    
+    # Calculate refund based on time to departure
+    now = datetime.now()
+    departure = schedule.departure_datetime
+    hours_to_departure = (departure - now).total_seconds() / 3600
+    
+    refund_percentage = 0
+    if hours_to_departure > 48:
+        refund_percentage = 80
+    elif hours_to_departure > 24:
+        refund_percentage = 50
+    elif hours_to_departure > 6:
+        refund_percentage = 25
+    
+    refund_amount = booking.final_amount * refund_percentage / 100
+    
+    # Update booking status
+    booking.booking_status = "cancelled"
+    booking.cancelled_at = datetime.now()
+    booking.refund_amount = refund_amount
+    
+    # Release seats
+    segments = db.query(FlightSegmentModel).filter(FlightSegmentModel.booking_id == booking.id).all()
+    for seg in segments:
+        passengers = db.query(FlightPassengerModel).filter(FlightPassengerModel.segment_id == seg.id).all()
+        for passenger in passengers:
+            if passenger.seat_id:
+                availability = db.query(FlightSeatAvailabilityModel).filter(
+                    FlightSeatAvailabilityModel.schedule_id == seg.schedule_id,
+                    FlightSeatAvailabilityModel.seat_id == passenger.seat_id
+                ).first()
+                if availability:
+                    availability.status = "available"
+                    availability.locked_by = None
+                    availability.locked_until = None
+        
+        # Restore seat count
+        schedule = db.query(FlightScheduleModel).filter(FlightScheduleModel.id == seg.schedule_id).first()
+        passenger_count = len([p for p in passengers if p.passenger_type != "infant"])
+        if passengers and passengers[0].seat_class == "economy":
+            schedule.available_economy += passenger_count
+        else:
+            if schedule.available_business is not None:
+                schedule.available_business += passenger_count
+    
+    db.commit()
+    
+    return {
+        "booking_id": booking.id,
+        "status": "cancelled",
+        "refund_percentage": refund_percentage,
+        "refund_amount": refund_amount,
+        "message": f"Booking cancelled. {refund_percentage}% refund of ₹{refund_amount:.0f} will be processed."
+    }
+
+
+# Get flight tracking
+@flight_router.get("/tracking/{schedule_id}")
+async def get_flight_tracking(
+    schedule_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get simulated live flight tracking"""
+    schedule = db.query(FlightScheduleModel).filter(FlightScheduleModel.id == schedule_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    
+    flight = db.query(FlightModel).filter(FlightModel.id == schedule.flight_id).first()
+    route = db.query(FlightRouteModel).filter(FlightRouteModel.id == flight.route_id).first()
+    origin = db.query(AirportModel).filter(AirportModel.id == route.origin_airport_id).first()
+    dest = db.query(AirportModel).filter(AirportModel.id == route.destination_airport_id).first()
+    
+    now = datetime.now()
+    dep = schedule.departure_datetime
+    arr = schedule.arrival_datetime
+    
+    # Calculate progress
+    if now < dep:
+        progress = 0
+        status = "scheduled"
+        if (dep - now).total_seconds() < 3600:
+            status = "boarding"
+    elif now > arr:
+        progress = 100
+        status = "landed"
+    else:
+        total_duration = (arr - dep).total_seconds()
+        elapsed = (now - dep).total_seconds()
+        progress = min(100, (elapsed / total_duration) * 100)
+        status = "in_air"
+    
+    # Interpolate position
+    if origin.latitude and origin.longitude and dest.latitude and dest.longitude:
+        current_lat = origin.latitude + (dest.latitude - origin.latitude) * (progress / 100)
+        current_lng = origin.longitude + (dest.longitude - origin.longitude) * (progress / 100)
+    else:
+        current_lat = None
+        current_lng = None
+    
+    # Calculate ETA
+    if progress < 100:
+        remaining_mins = int((arr - now).total_seconds() / 60)
+    else:
+        remaining_mins = 0
+    
+    return {
+        "schedule_id": schedule_id,
+        "flight_number": flight.flight_number,
+        "status": status,
+        "progress_percentage": round(progress, 1),
+        "current_latitude": current_lat,
+        "current_longitude": current_lng,
+        "altitude_ft": 35000 if status == "in_air" else 0,
+        "speed_kmph": 850 if status == "in_air" else 0,
+        "origin": {"code": origin.code, "city": origin.city, "lat": origin.latitude, "lng": origin.longitude},
+        "destination": {"code": dest.code, "city": dest.city, "lat": dest.latitude, "lng": dest.longitude},
+        "departure_time": schedule.departure_datetime.isoformat(),
+        "arrival_time": schedule.arrival_datetime.isoformat(),
+        "eta_mins": remaining_mins
+    }
+
+
+# Seed flight data
+@flight_router.post("/seed")
+async def seed_flight_data(db: Session = Depends(get_db)):
+    """Seed flight database with sample data"""
+    import random
+    
+    # Check if already seeded
+    existing = db.query(AirportModel).first()
+    if existing:
+        return {"message": "Flight data already seeded"}
+    
+    # Indian airports
+    airports_data = [
+        {"code": "DEL", "name": "Indira Gandhi International Airport", "city": "Delhi", "country": "India", "lat": 28.5562, "lng": 77.1000, "tz": "Asia/Kolkata"},
+        {"code": "BOM", "name": "Chhatrapati Shivaji Maharaj International Airport", "city": "Mumbai", "country": "India", "lat": 19.0896, "lng": 72.8656, "tz": "Asia/Kolkata"},
+        {"code": "BLR", "name": "Kempegowda International Airport", "city": "Bangalore", "country": "India", "lat": 13.1986, "lng": 77.7066, "tz": "Asia/Kolkata"},
+        {"code": "MAA", "name": "Chennai International Airport", "city": "Chennai", "country": "India", "lat": 12.9941, "lng": 80.1709, "tz": "Asia/Kolkata"},
+        {"code": "HYD", "name": "Rajiv Gandhi International Airport", "city": "Hyderabad", "country": "India", "lat": 17.2403, "lng": 78.4294, "tz": "Asia/Kolkata"},
+        {"code": "CCU", "name": "Netaji Subhas Chandra Bose International Airport", "city": "Kolkata", "country": "India", "lat": 22.6547, "lng": 88.4467, "tz": "Asia/Kolkata"},
+        {"code": "COK", "name": "Cochin International Airport", "city": "Kochi", "country": "India", "lat": 10.1520, "lng": 76.4019, "tz": "Asia/Kolkata"},
+        {"code": "PNQ", "name": "Pune Airport", "city": "Pune", "country": "India", "lat": 18.5822, "lng": 73.9197, "tz": "Asia/Kolkata"},
+        {"code": "GOI", "name": "Goa International Airport", "city": "Goa", "country": "India", "lat": 15.3808, "lng": 73.8314, "tz": "Asia/Kolkata"},
+        {"code": "AMD", "name": "Sardar Vallabhbhai Patel International Airport", "city": "Ahmedabad", "country": "India", "lat": 23.0772, "lng": 72.6347, "tz": "Asia/Kolkata"},
+        {"code": "JAI", "name": "Jaipur International Airport", "city": "Jaipur", "country": "India", "lat": 26.8242, "lng": 75.8122, "tz": "Asia/Kolkata"},
+        {"code": "LKO", "name": "Chaudhary Charan Singh International Airport", "city": "Lucknow", "country": "India", "lat": 26.7606, "lng": 80.8893, "tz": "Asia/Kolkata"},
+        # International
+        {"code": "DXB", "name": "Dubai International Airport", "city": "Dubai", "country": "UAE", "lat": 25.2532, "lng": 55.3657, "tz": "Asia/Dubai"},
+        {"code": "SIN", "name": "Singapore Changi Airport", "city": "Singapore", "country": "Singapore", "lat": 1.3644, "lng": 103.9915, "tz": "Asia/Singapore"},
+        {"code": "LHR", "name": "London Heathrow Airport", "city": "London", "country": "UK", "lat": 51.4700, "lng": -0.4543, "tz": "Europe/London"},
+    ]
+    
+    for a in airports_data:
+        airport = AirportModel(
+            code=a["code"], name=a["name"], city=a["city"], country=a["country"],
+            latitude=a["lat"], longitude=a["lng"], timezone=a["tz"]
+        )
+        db.add(airport)
+    db.flush()
+    
+    # Airlines
+    airlines_data = [
+        {"code": "6E", "name": "IndiGo", "logo": "/images/airlines/indigo.png", "country": "India"},
+        {"code": "AI", "name": "Air India", "logo": "/images/airlines/airindia.png", "country": "India"},
+        {"code": "SG", "name": "SpiceJet", "logo": "/images/airlines/spicejet.png", "country": "India"},
+        {"code": "UK", "name": "Vistara", "logo": "/images/airlines/vistara.png", "country": "India"},
+        {"code": "I5", "name": "Air India Express", "logo": "/images/airlines/airindia-express.png", "country": "India"},
+        {"code": "G8", "name": "Go First", "logo": "/images/airlines/gofirst.png", "country": "India"},
+        {"code": "EK", "name": "Emirates", "logo": "/images/airlines/emirates.png", "country": "UAE"},
+        {"code": "SQ", "name": "Singapore Airlines", "logo": "/images/airlines/singapore.png", "country": "Singapore"},
+    ]
+    
+    for a in airlines_data:
+        airline = AirlineModel(code=a["code"], name=a["name"], logo_url=a["logo"], country=a["country"])
+        db.add(airline)
+    db.flush()
+    
+    # Aircraft
+    aircraft_data = [
+        {"model": "Airbus A320", "manufacturer": "Airbus", "total": 180, "economy": 168, "business": 12, "layout": "3-3"},
+        {"model": "Airbus A321", "manufacturer": "Airbus", "total": 220, "economy": 200, "business": 20, "layout": "3-3"},
+        {"model": "Boeing 737-800", "manufacturer": "Boeing", "total": 189, "economy": 177, "business": 12, "layout": "3-3"},
+        {"model": "Boeing 787 Dreamliner", "manufacturer": "Boeing", "total": 256, "economy": 232, "business": 24, "layout": "3-3-3"},
+        {"model": "Airbus A320neo", "manufacturer": "Airbus", "total": 186, "economy": 174, "business": 12, "layout": "3-3"},
+    ]
+    
+    for a in aircraft_data:
+        aircraft = AircraftModel(
+            model=a["model"], manufacturer=a["manufacturer"], total_seats=a["total"],
+            economy_seats=a["economy"], business_seats=a["business"], seat_layout=a["layout"]
+        )
+        db.add(aircraft)
+    db.flush()
+    
+    # Generate seats for each aircraft
+    aircraft_list = db.query(AircraftModel).all()
+    for aircraft in aircraft_list:
+        layout = aircraft.seat_layout.split('-')
+        cols_per_side = int(layout[0])
+        total_cols = cols_per_side * 2
+        
+        # Column letters based on layout
+        if total_cols == 6:
+            columns = ['A', 'B', 'C', 'D', 'E', 'F']
+        else:
+            columns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'][:total_cols]
+        
+        # Business class rows (first 2-4 rows)
+        business_rows = aircraft.business_seats // total_cols if aircraft.business_seats > 0 else 0
+        
+        row = 1
+        # Business class seats
+        for r in range(business_rows):
+            for col in columns:
+                seat_type = "window" if col in ['A', columns[-1]] else ("aisle" if col in ['C', 'D'] else "middle")
+                seat = FlightSeatModel(
+                    aircraft_id=aircraft.id,
+                    seat_number=f"{row}{col}",
+                    seat_class="business",
+                    seat_type=seat_type,
+                    row_number=row,
+                    column_letter=col,
+                    is_extra_legroom=1,
+                    price_modifier=500
+                )
+                db.add(seat)
+            row += 1
+        
+        # Economy class seats
+        economy_rows = aircraft.economy_seats // total_cols
+        for r in range(economy_rows):
+            for col in columns:
+                seat_type = "window" if col in ['A', columns[-1]] else ("aisle" if col in ['C', 'D'] else "middle")
+                is_extra_legroom = 1 if row in [business_rows + 1, business_rows + 12, business_rows + 13] else 0
+                is_emergency = 1 if row in [business_rows + 12, business_rows + 13] else 0
+                price_mod = 200 if is_extra_legroom else (50 if seat_type == "window" else 0)
+                
+                seat = FlightSeatModel(
+                    aircraft_id=aircraft.id,
+                    seat_number=f"{row}{col}",
+                    seat_class="economy",
+                    seat_type=seat_type,
+                    row_number=row,
+                    column_letter=col,
+                    is_extra_legroom=is_extra_legroom,
+                    is_emergency_exit=is_emergency,
+                    price_modifier=price_mod
+                )
+                db.add(seat)
+            row += 1
+    
+    db.flush()
+    
+    # Routes (major Indian routes)
+    airport_map = {a.code: a.id for a in db.query(AirportModel).all()}
+    
+    routes_data = [
+        ("DEL", "BOM", 1148, 130), ("BOM", "DEL", 1148, 130),
+        ("DEL", "BLR", 1740, 165), ("BLR", "DEL", 1740, 165),
+        ("DEL", "MAA", 1760, 170), ("MAA", "DEL", 1760, 170),
+        ("DEL", "HYD", 1260, 140), ("HYD", "DEL", 1260, 140),
+        ("BOM", "BLR", 842, 95), ("BLR", "BOM", 842, 95),
+        ("BOM", "MAA", 1028, 110), ("MAA", "BOM", 1028, 110),
+        ("BOM", "HYD", 617, 80), ("HYD", "BOM", 617, 80),
+        ("BLR", "MAA", 284, 55), ("MAA", "BLR", 284, 55),
+        ("BLR", "HYD", 502, 70), ("HYD", "BLR", 502, 70),
+        ("DEL", "CCU", 1305, 145), ("CCU", "DEL", 1305, 145),
+        ("BOM", "GOI", 439, 65), ("GOI", "BOM", 439, 65),
+        ("DEL", "GOI", 1500, 155), ("GOI", "DEL", 1500, 155),
+        ("BLR", "COK", 340, 60), ("COK", "BLR", 340, 60),
+        ("MAA", "COK", 520, 75), ("COK", "MAA", 520, 75),
+        # International
+        ("DEL", "DXB", 2200, 210), ("DXB", "DEL", 2200, 210),
+        ("BOM", "DXB", 1930, 190), ("DXB", "BOM", 1930, 190),
+        ("DEL", "SIN", 4150, 330), ("SIN", "DEL", 4150, 330),
+        ("BOM", "LHR", 7200, 540), ("LHR", "BOM", 7200, 540),
+    ]
+    
+    for origin, dest, dist, dur in routes_data:
+        if origin in airport_map and dest in airport_map:
+            route = FlightRouteModel(
+                origin_airport_id=airport_map[origin],
+                destination_airport_id=airport_map[dest],
+                distance_km=dist,
+                estimated_duration_mins=dur
+            )
+            db.add(route)
+    
+    db.flush()
+    
+    # Flights
+    airline_map = {a.code: a.id for a in db.query(AirlineModel).all()}
+    aircraft_list = db.query(AircraftModel).all()
+    routes = db.query(FlightRouteModel).all()
+    
+    flight_times = [
+        ("06:00", "08:10"), ("07:30", "09:40"), ("09:00", "11:15"),
+        ("10:30", "12:45"), ("12:00", "14:10"), ("14:30", "16:45"),
+        ("16:00", "18:15"), ("18:30", "20:40"), ("20:00", "22:10"),
+        ("22:30", "00:45"),  # Overnight
+    ]
+    
+    for route in routes:
+        origin = db.query(AirportModel).filter(AirportModel.id == route.origin_airport_id).first()
+        dest = db.query(AirportModel).filter(AirportModel.id == route.destination_airport_id).first()
+        
+        # Create 2-4 flights per route
+        num_flights = random.randint(2, 4)
+        used_times = set()
+        
+        for _ in range(num_flights):
+            airline_code = random.choice(list(airline_map.keys())[:6])  # Indian airlines
+            if route.distance_km and route.distance_km > 3000:
+                airline_code = random.choice(["AI", "EK", "SQ"])  # International
+            
+            aircraft = random.choice(aircraft_list)
+            
+            # Pick unique departure time
+            time_idx = random.randint(0, len(flight_times) - 1)
+            while time_idx in used_times and len(used_times) < len(flight_times):
+                time_idx = random.randint(0, len(flight_times) - 1)
+            used_times.add(time_idx)
+            
+            dep_time, arr_time = flight_times[time_idx]
+            
+            # Adjust arrival time based on actual duration
+            dep_hour, dep_min = map(int, dep_time.split(':'))
+            total_mins = dep_hour * 60 + dep_min + route.estimated_duration_mins
+            arr_hour = (total_mins // 60) % 24
+            arr_min = total_mins % 60
+            arr_time = f"{arr_hour:02d}:{arr_min:02d}"
+            is_overnight = 1 if total_mins >= 24 * 60 else 0
+            
+            flight_num = f"{airline_code}{random.randint(100, 999)}"
+            base_price = max(2500, route.distance_km * 3 + random.randint(-500, 500)) if route.distance_km else random.randint(3000, 8000)
+            
+            flight = FlightModel(
+                flight_number=flight_num,
+                airline_id=airline_map[airline_code],
+                route_id=route.id,
+                aircraft_id=aircraft.id,
+                departure_time=dep_time,
+                arrival_time=arr_time,
+                duration_mins=route.estimated_duration_mins,
+                stops=0,
+                days_of_week="1,2,3,4,5,6,7",
+                base_price_economy=base_price,
+                base_price_business=base_price * 3,
+                is_overnight=is_overnight,
+                is_refundable=random.choice([0, 1]),
+                meal_included=random.choice([0, 1])
+            )
+            db.add(flight)
+    
+    db.commit()
+    
+    # Count created entities
+    airport_count = db.query(AirportModel).count()
+    airline_count = db.query(AirlineModel).count()
+    aircraft_count = db.query(AircraftModel).count()
+    route_count = db.query(FlightRouteModel).count()
+    flight_count = db.query(FlightModel).count()
+    seat_count = db.query(FlightSeatModel).count()
+    
+    return {
+        "message": "Flight data seeded successfully",
+        "airports": airport_count,
+        "airlines": airline_count,
+        "aircraft": aircraft_count,
+        "routes": route_count,
+        "flights": flight_count,
+        "seats": seat_count
+    }
+
+
+# Register flight router
+app.include_router(flight_router)
+
+
+# =============================
 # Admin Bus Management Endpoints
 # =============================
 @admin_router.get("/bus/cities")
@@ -6350,6 +7892,505 @@ async def admin_get_bus_bookings(
         })
     
     return result
+
+
+# =============================
+# Admin Flight Endpoints
+# =============================
+
+@admin_router.get("/flight/airports")
+async def admin_get_airports(
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get all airports"""
+    airports = db.query(AirportModel).all()
+    return [{"id": a.id, "code": a.code, "name": a.name, "city": a.city, 
+             "country": a.country, "timezone": a.timezone, "latitude": a.latitude, 
+             "longitude": a.longitude, "is_active": a.is_active} for a in airports]
+
+@admin_router.post("/flight/airports")
+async def admin_create_airport(
+    data: AirportCreate,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Create a new airport"""
+    existing = db.query(AirportModel).filter(AirportModel.code == data.code).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Airport code already exists")
+    
+    airport = AirportModel(
+        code=data.code.upper(),
+        name=data.name,
+        city=data.city,
+        country=data.country,
+        timezone=data.timezone,
+        latitude=data.latitude,
+        longitude=data.longitude,
+        is_active=True
+    )
+    db.add(airport)
+    db.commit()
+    db.refresh(airport)
+    return {"message": "Airport created", "id": airport.id}
+
+@admin_router.put("/flight/airports/{airport_id}")
+async def admin_update_airport(
+    airport_id: int,
+    data: AirportCreate,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Update an airport"""
+    airport = db.query(AirportModel).filter(AirportModel.id == airport_id).first()
+    if not airport:
+        raise HTTPException(status_code=404, detail="Airport not found")
+    
+    airport.code = data.code.upper()
+    airport.name = data.name
+    airport.city = data.city
+    airport.country = data.country
+    airport.timezone = data.timezone
+    airport.latitude = data.latitude
+    airport.longitude = data.longitude
+    db.commit()
+    return {"message": "Airport updated"}
+
+@admin_router.delete("/flight/airports/{airport_id}")
+async def admin_delete_airport(
+    airport_id: int,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete an airport"""
+    airport = db.query(AirportModel).filter(AirportModel.id == airport_id).first()
+    if not airport:
+        raise HTTPException(status_code=404, detail="Airport not found")
+    
+    db.delete(airport)
+    db.commit()
+    return {"message": "Airport deleted"}
+
+@admin_router.get("/flight/airlines")
+async def admin_get_airlines(
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get all airlines"""
+    airlines = db.query(AirlineModel).all()
+    return [{"id": a.id, "code": a.code, "name": a.name, "logo_url": a.logo_url, 
+             "country": a.country, "is_active": a.is_active} for a in airlines]
+
+@admin_router.post("/flight/airlines")
+async def admin_create_airline(
+    data: AirlineCreate,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Create a new airline"""
+    existing = db.query(AirlineModel).filter(AirlineModel.code == data.code).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Airline code already exists")
+    
+    airline = AirlineModel(
+        code=data.code.upper(),
+        name=data.name,
+        logo_url=data.logo_url,
+        country=data.country,
+        is_active=True
+    )
+    db.add(airline)
+    db.commit()
+    db.refresh(airline)
+    return {"message": "Airline created", "id": airline.id}
+
+@admin_router.put("/flight/airlines/{airline_id}")
+async def admin_update_airline(
+    airline_id: int,
+    data: AirlineCreate,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Update an airline"""
+    airline = db.query(AirlineModel).filter(AirlineModel.id == airline_id).first()
+    if not airline:
+        raise HTTPException(status_code=404, detail="Airline not found")
+    
+    airline.code = data.code.upper()
+    airline.name = data.name
+    airline.logo_url = data.logo_url
+    airline.country = data.country
+    db.commit()
+    return {"message": "Airline updated"}
+
+@admin_router.delete("/flight/airlines/{airline_id}")
+async def admin_delete_airline(
+    airline_id: int,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete an airline"""
+    airline = db.query(AirlineModel).filter(AirlineModel.id == airline_id).first()
+    if not airline:
+        raise HTTPException(status_code=404, detail="Airline not found")
+    
+    db.delete(airline)
+    db.commit()
+    return {"message": "Airline deleted"}
+
+@admin_router.get("/flight/aircraft")
+async def admin_get_aircraft(
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get all aircraft"""
+    aircraft = db.query(AircraftModel).all()
+    return [{"id": a.id, "model": a.model, "manufacturer": a.manufacturer, 
+             "total_seats": a.total_seats, "seat_layout": a.seat_layout,
+             "has_business_class": a.has_business_class} for a in aircraft]
+
+@admin_router.post("/flight/aircraft")
+async def admin_create_aircraft(
+    data: AircraftCreate,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Create a new aircraft"""
+    aircraft = AircraftModel(
+        model=data.model,
+        manufacturer=data.manufacturer,
+        total_seats=data.total_seats,
+        seat_layout=data.seat_layout,
+        has_business_class=data.has_business_class
+    )
+    db.add(aircraft)
+    db.commit()
+    db.refresh(aircraft)
+    return {"message": "Aircraft created", "id": aircraft.id}
+
+@admin_router.get("/flight/routes")
+async def admin_get_flight_routes(
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get all flight routes"""
+    routes = db.query(FlightRouteModel).all()
+    result = []
+    for r in routes:
+        origin = db.query(AirportModel).filter(AirportModel.id == r.origin_airport_id).first()
+        dest = db.query(AirportModel).filter(AirportModel.id == r.destination_airport_id).first()
+        result.append({
+            "id": r.id,
+            "origin_airport_id": r.origin_airport_id,
+            "origin": {"code": origin.code, "city": origin.city} if origin else None,
+            "destination_airport_id": r.destination_airport_id,
+            "destination": {"code": dest.code, "city": dest.city} if dest else None,
+            "distance_km": r.distance_km,
+            "duration_mins": r.duration_mins,
+            "is_active": r.is_active
+        })
+    return result
+
+@admin_router.post("/flight/routes")
+async def admin_create_flight_route(
+    data: FlightRouteCreate,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Create a new flight route"""
+    # Verify airports exist
+    origin = db.query(AirportModel).filter(AirportModel.id == data.origin_airport_id).first()
+    dest = db.query(AirportModel).filter(AirportModel.id == data.destination_airport_id).first()
+    
+    if not origin or not dest:
+        raise HTTPException(status_code=400, detail="Invalid airport IDs")
+    
+    route = FlightRouteModel(
+        origin_airport_id=data.origin_airport_id,
+        destination_airport_id=data.destination_airport_id,
+        distance_km=data.distance_km,
+        duration_mins=data.duration_mins,
+        is_active=True
+    )
+    db.add(route)
+    db.commit()
+    db.refresh(route)
+    return {"message": "Route created", "id": route.id}
+
+@admin_router.get("/flight/flights")
+async def admin_get_flights(
+    page: int = 1,
+    limit: int = 20,
+    status: Optional[str] = None,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get all flights with pagination"""
+    query = db.query(FlightModel)
+    if status:
+        query = query.filter(FlightModel.status == status)
+    
+    flights = query.order_by(FlightModel.departure_datetime.desc()).offset((page-1)*limit).limit(limit).all()
+    
+    result = []
+    for f in flights:
+        airline = db.query(AirlineModel).filter(AirlineModel.id == f.airline_id).first()
+        route = db.query(FlightRouteModel).filter(FlightRouteModel.id == f.route_id).first()
+        origin = db.query(AirportModel).filter(AirportModel.id == route.origin_airport_id).first() if route else None
+        dest = db.query(AirportModel).filter(AirportModel.id == route.destination_airport_id).first() if route else None
+        
+        result.append({
+            "id": f.id,
+            "flight_number": f.flight_number,
+            "airline": {"code": airline.code, "name": airline.name, "logo": airline.logo_url} if airline else None,
+            "origin": {"code": origin.code, "city": origin.city, "name": origin.name} if origin else None,
+            "destination": {"code": dest.code, "city": dest.city, "name": dest.name} if dest else None,
+            "departure_datetime": f.departure_datetime.isoformat() if f.departure_datetime else None,
+            "arrival_datetime": f.arrival_datetime.isoformat() if f.arrival_datetime else None,
+            "base_price_economy": f.base_price_economy,
+            "base_price_business": f.base_price_business,
+            "status": f.status,
+            "stops": f.stops
+        })
+    
+    return result
+
+@admin_router.post("/flight/flights")
+async def admin_create_flight(
+    data: FlightCreate,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Create a new flight"""
+    # Verify references
+    airline = db.query(AirlineModel).filter(AirlineModel.id == data.airline_id).first()
+    route = db.query(FlightRouteModel).filter(FlightRouteModel.id == data.route_id).first()
+    aircraft = db.query(AircraftModel).filter(AircraftModel.id == data.aircraft_id).first()
+    
+    if not airline:
+        raise HTTPException(status_code=400, detail="Invalid airline ID")
+    if not route:
+        raise HTTPException(status_code=400, detail="Invalid route ID")
+    if not aircraft:
+        raise HTTPException(status_code=400, detail="Invalid aircraft ID")
+    
+    flight = FlightModel(
+        flight_number=data.flight_number.upper(),
+        airline_id=data.airline_id,
+        route_id=data.route_id,
+        aircraft_id=data.aircraft_id,
+        departure_datetime=data.departure_datetime,
+        arrival_datetime=data.arrival_datetime,
+        base_price_economy=data.base_price_economy,
+        base_price_business=data.base_price_business,
+        status=data.status or "scheduled",
+        stops=data.stops or 0,
+        gate=data.gate,
+        terminal=data.terminal
+    )
+    db.add(flight)
+    db.commit()
+    db.refresh(flight)
+    
+    # Initialize seat availability for this flight
+    seats = db.query(FlightSeatModel).filter(FlightSeatModel.aircraft_id == data.aircraft_id).all()
+    for seat in seats:
+        availability = FlightSeatAvailabilityModel(
+            flight_id=flight.id,
+            seat_id=seat.id,
+            status="available"
+        )
+        db.add(availability)
+    db.commit()
+    
+    return {"message": "Flight created", "id": flight.id}
+
+@admin_router.put("/flight/flights/{flight_id}")
+async def admin_update_flight(
+    flight_id: int,
+    status: str,
+    gate: Optional[str] = None,
+    terminal: Optional[str] = None,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Update flight status"""
+    flight = db.query(FlightModel).filter(FlightModel.id == flight_id).first()
+    if not flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    
+    flight.status = status
+    if gate:
+        flight.gate = gate
+    if terminal:
+        flight.terminal = terminal
+    
+    db.commit()
+    return {"message": "Flight updated"}
+
+@admin_router.get("/flight/bookings")
+async def admin_get_flight_bookings(
+    page: int = 1,
+    limit: int = 20,
+    status: Optional[str] = None,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get all flight bookings"""
+    query = db.query(FlightBookingModel)
+    if status:
+        query = query.filter(FlightBookingModel.status == status)
+    
+    bookings = query.order_by(FlightBookingModel.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+    
+    result = []
+    for b in bookings:
+        user = db.query(User).filter(User.id == b.user_id).first()
+        passengers = db.query(FlightPassengerModel).filter(FlightPassengerModel.booking_id == b.id).all()
+        
+        # Get flight info for first passenger
+        first_passenger = passengers[0] if passengers else None
+        flight = db.query(FlightModel).filter(FlightModel.id == first_passenger.flight_id).first() if first_passenger else None
+        airline = db.query(AirlineModel).filter(AirlineModel.id == flight.airline_id).first() if flight else None
+        
+        result.append({
+            "id": b.id,
+            "booking_reference": b.booking_reference,
+            "pnr": b.pnr,
+            "user": {"id": user.id, "name": user.name, "email": user.email} if user else None,
+            "flight_number": flight.flight_number if flight else None,
+            "airline": airline.name if airline else None,
+            "trip_type": b.trip_type,
+            "total_passengers": b.total_passengers,
+            "total_amount": b.total_amount,
+            "status": b.status,
+            "payment_status": b.payment_status,
+            "created_at": b.created_at.isoformat() if b.created_at else None
+        })
+    
+    return result
+
+@admin_router.get("/flight/bookings/{booking_id}")
+async def admin_get_flight_booking_detail(
+    booking_id: int,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get detailed flight booking info"""
+    booking = db.query(FlightBookingModel).filter(FlightBookingModel.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    user = db.query(User).filter(User.id == booking.user_id).first()
+    passengers = db.query(FlightPassengerModel).filter(FlightPassengerModel.booking_id == booking.id).all()
+    
+    passenger_details = []
+    for p in passengers:
+        flight = db.query(FlightModel).filter(FlightModel.id == p.flight_id).first()
+        seat = db.query(FlightSeatModel).filter(FlightSeatModel.id == p.seat_id).first()
+        route = db.query(FlightRouteModel).filter(FlightRouteModel.id == flight.route_id).first() if flight else None
+        origin = db.query(AirportModel).filter(AirportModel.id == route.origin_airport_id).first() if route else None
+        dest = db.query(AirportModel).filter(AirportModel.id == route.destination_airport_id).first() if route else None
+        
+        passenger_details.append({
+            "id": p.id,
+            "full_name": p.full_name,
+            "gender": p.gender,
+            "dob": p.dob,
+            "nationality": p.nationality,
+            "passport_number": p.passport_number,
+            "seat": seat.seat_number if seat else None,
+            "seat_class": seat.seat_class if seat else None,
+            "flight": {
+                "number": flight.flight_number if flight else None,
+                "origin": origin.code if origin else None,
+                "destination": dest.code if dest else None,
+                "departure": flight.departure_datetime.isoformat() if flight else None,
+                "arrival": flight.arrival_datetime.isoformat() if flight else None
+            }
+        })
+    
+    return {
+        "id": booking.id,
+        "booking_reference": booking.booking_reference,
+        "pnr": booking.pnr,
+        "user": {"id": user.id, "name": user.name, "email": user.email, "phone": user.phone} if user else None,
+        "trip_type": booking.trip_type,
+        "total_passengers": booking.total_passengers,
+        "total_amount": booking.total_amount,
+        "status": booking.status,
+        "payment_status": booking.payment_status,
+        "contact_name": booking.contact_name,
+        "contact_email": booking.contact_email,
+        "contact_phone": booking.contact_phone,
+        "passengers": passenger_details,
+        "created_at": booking.created_at.isoformat() if booking.created_at else None
+    }
+
+@admin_router.post("/flight/bookings/{booking_id}/status")
+async def admin_update_flight_booking_status(
+    booking_id: int,
+    status: str,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Update flight booking status"""
+    booking = db.query(FlightBookingModel).filter(FlightBookingModel.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    valid_statuses = ["confirmed", "cancelled", "completed", "refunded"]
+    if status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
+    
+    booking.status = status
+    db.commit()
+    
+    return {"message": f"Booking status updated to {status}"}
+
+@admin_router.post("/flight/tracking/{flight_id}")
+async def admin_update_flight_tracking(
+    flight_id: int,
+    latitude: float,
+    longitude: float,
+    altitude: Optional[int] = None,
+    speed: Optional[int] = None,
+    heading: Optional[int] = None,
+    status: Optional[str] = None,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Update live flight tracking data"""
+    flight = db.query(FlightModel).filter(FlightModel.id == flight_id).first()
+    if not flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    
+    # Update or create tracking record
+    tracking = db.query(FlightLiveTrackingModel).filter(FlightLiveTrackingModel.flight_id == flight_id).first()
+    
+    if tracking:
+        tracking.current_latitude = latitude
+        tracking.current_longitude = longitude
+        tracking.altitude_ft = altitude or tracking.altitude_ft
+        tracking.speed_knots = speed or tracking.speed_knots
+        tracking.heading = heading or tracking.heading
+        tracking.status = status or tracking.status
+        tracking.updated_at = datetime.utcnow()
+    else:
+        tracking = FlightLiveTrackingModel(
+            flight_id=flight_id,
+            current_latitude=latitude,
+            current_longitude=longitude,
+            altitude_ft=altitude or 0,
+            speed_knots=speed or 0,
+            heading=heading or 0,
+            status=status or "in_air"
+        )
+        db.add(tracking)
+    
+    db.commit()
+    return {"message": "Tracking updated"}
 
 
 # Register admin router

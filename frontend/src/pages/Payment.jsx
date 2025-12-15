@@ -6,7 +6,7 @@ import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { CheckCircle, IndianRupee, Mail, Phone, User, CreditCard, Zap } from 'lucide-react';
+import { CheckCircle, IndianRupee, Mail, Phone, User, CreditCard, Zap, Plane, Bus } from 'lucide-react';
 
 const Payment = () => {
   const navigate = useNavigate();
@@ -158,35 +158,57 @@ const Payment = () => {
         try {
           const res = await api.post('/api/payment/confirm', payload);
           setSuccess(true);
-          navigate('/receipt', { 
-            state: { 
-              receiptUrl: res.data.receipt_url, 
-              ticketUrl: res.data.ticket_url,
-              bookingRef: res.data.booking_ref, 
-              booking: {
-                ...fullBooking,
-                booking_ref: res.data.booking_ref,
-                service_details: serviceDetails,
-                service_type: serviceType
-              },
-              payer: { 
-                fullName: userProfile.fullName,
-                email: userProfile.email,
-                phone: userProfile.phone,
-                method: defaultPaymentMethod === 'upi' ? 'UPI' : 'Bank',
-                credential: `Saved ${defaultPaymentMethod === 'upi' ? 'UPI' : 'Bank Account'}`
-              },
-              payment: res.data,
-              serviceType,
-              serviceDetails
-            } 
-          });
+          
+          // Navigate based on service type
+          if (serviceType === 'Flight') {
+            navigate(`/flight-ticket?ref=${serviceDetails?.pnr || bookingRef}`, { 
+              state: { 
+                bookingRef: serviceDetails?.pnr || bookingRef,
+                payment: res.data
+              } 
+            });
+          } else if (serviceType === 'Bus') {
+            navigate(`/bus-ticket?ref=${bookingRef}`, { 
+              state: { 
+                bookingRef: bookingRef,
+                payment: res.data
+              } 
+            });
+          } else {
+            navigate('/receipt', { 
+              state: { 
+                receiptUrl: res.data.receipt_url, 
+                ticketUrl: res.data.ticket_url,
+                bookingRef: res.data.booking_ref, 
+                booking: {
+                  ...fullBooking,
+                  booking_ref: res.data.booking_ref,
+                  service_details: serviceDetails,
+                  service_type: serviceType
+                },
+                payer: { 
+                  fullName: userProfile.fullName,
+                  email: userProfile.email,
+                  phone: userProfile.phone,
+                  method: defaultPaymentMethod === 'upi' ? 'UPI' : 'Bank',
+                  credential: `Saved ${defaultPaymentMethod === 'upi' ? 'UPI' : 'Bank Account'}`
+                },
+                payment: res.data,
+                serviceType,
+                serviceDetails
+              } 
+            });
+          }
         } catch (receiptError) {
           // Payment succeeded but receipt generation failed - still navigate to ticket
           console.error('Receipt generation failed, redirecting to ticket:', receiptError);
           setSuccess(true);
           setTimeout(() => {
-            navigate(`/ticket/${bookingId}`);
+            if (serviceType === 'Flight') {
+              navigate(`/flight-ticket?ref=${serviceDetails?.pnr || bookingRef}`);
+            } else {
+              navigate(`/ticket/${bookingId}`);
+            }
           }, 1500);
         }
       }
@@ -250,24 +272,42 @@ const Payment = () => {
   const res = await api.post('/api/payment/confirm', payload);
       setSuccess(true);
       setSubmitting(false);
-      navigate('/receipt', { 
-        state: { 
-          receiptUrl: res.data.receipt_url, 
-          ticketUrl: res.data.ticket_url,
-          bookingRef: res.data.booking_ref, 
-          booking: {
-            ...fullBooking,
-            ...booking,
-            booking_ref: res.data.booking_ref,
-            service_details: serviceDetails, // Ensure full service details are passed
-            service_type: serviceType
-          },
-          payer: { ...form },
-          payment: res.data,
-          serviceType,
-          serviceDetails
-        } 
-      });
+      
+      // Navigate based on service type
+      if (serviceType === 'Flight') {
+        navigate(`/flight-ticket?ref=${serviceDetails?.pnr || bookingRef}`, { 
+          state: { 
+            bookingRef: serviceDetails?.pnr || bookingRef,
+            payment: res.data
+          } 
+        });
+      } else if (serviceType === 'Bus') {
+        navigate(`/bus-ticket?ref=${bookingRef}`, { 
+          state: { 
+            bookingRef: bookingRef,
+            payment: res.data
+          } 
+        });
+      } else {
+        navigate('/receipt', { 
+          state: { 
+            receiptUrl: res.data.receipt_url, 
+            ticketUrl: res.data.ticket_url,
+            bookingRef: res.data.booking_ref, 
+            booking: {
+              ...fullBooking,
+              ...booking,
+              booking_ref: res.data.booking_ref,
+              service_details: serviceDetails,
+              service_type: serviceType
+            },
+            payer: { ...form },
+            payment: res.data,
+            serviceType,
+            serviceDetails
+          } 
+        });
+      }
       return;
     } catch (err) {
       console.error('Payment confirm failed:', err?.response?.status, err?.response?.data || err?.message);
@@ -291,47 +331,98 @@ const Payment = () => {
         {/* Summary Card */}
         {(booking || bookingRef) && (
           <Card className="mb-8 p-6 bg-gradient-to-br from-blue-50 to-cyan-50 border-0">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {serviceType && (
-                <div>
-                  <p className="text-sm text-gray-600">Service Type</p>
-                  <p className="text-lg font-bold text-[#0077b6]">{serviceType}</p>
+            {/* Flight-specific Summary */}
+            {serviceType === 'Flight' && serviceDetails && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="bg-blue-600 p-2 rounded-lg">
+                    <Plane className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-900">{serviceDetails.airline}</h3>
+                    <p className="text-sm text-gray-600">Flight {serviceDetails.flight_number}</p>
+                  </div>
                 </div>
-              )}
-              <div>
-                <p className="text-sm text-gray-600">Booking Ref</p>
-                <p className="text-lg font-bold text-[#0077b6]">{bookingRef || booking?.booking_ref}</p>
+                <div className="flex items-center justify-between bg-white/60 rounded-xl p-4">
+                  <div className="text-center">
+                    <p className="text-3xl font-bold text-gray-900">{serviceDetails.from}</p>
+                    <p className="text-sm text-gray-500">Origin</p>
+                  </div>
+                  <div className="flex-1 flex items-center justify-center px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-px w-12 bg-gray-300"></div>
+                      <Plane className="w-5 h-5 text-blue-600 rotate-90" />
+                      <div className="h-px w-12 bg-gray-300"></div>
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-3xl font-bold text-gray-900">{serviceDetails.to}</p>
+                    <p className="text-sm text-gray-500">Destination</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500">Travel Date</p>
+                    <p className="font-semibold">{serviceDetails.date}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Passengers</p>
+                    <p className="font-semibold">{serviceDetails.passengers}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">PNR</p>
+                    <p className="font-mono font-bold text-blue-600">{serviceDetails.pnr}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Total Amount</p>
+                    <p className="text-xl font-bold text-blue-600">₹{Number(paymentAmount).toLocaleString()}</p>
+                  </div>
+                </div>
               </div>
-              {(serviceDetails?.destination || booking?.destination) && (
+            )}
+            
+            {/* Generic Service Summary (non-flight) */}
+            {serviceType !== 'Flight' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {serviceType && (
+                  <div>
+                    <p className="text-sm text-gray-600">Service Type</p>
+                    <p className="text-lg font-bold text-[#0077b6]">{serviceType}</p>
+                  </div>
+                )}
                 <div>
-                  <p className="text-sm text-gray-600">Destination</p>
-                  <p className="font-semibold">{serviceDetails?.destination || booking?.destination}</p>
+                  <p className="text-sm text-gray-600">Booking Ref</p>
+                  <p className="text-lg font-bold text-[#0077b6]">{bookingRef || booking?.booking_ref}</p>
                 </div>
-              )}
-              {(serviceDetails?.checkIn || booking?.start_date) && (
+                {(serviceDetails?.destination || booking?.destination) && (
+                  <div>
+                    <p className="text-sm text-gray-600">Destination</p>
+                    <p className="font-semibold">{serviceDetails?.destination || booking?.destination}</p>
+                  </div>
+                )}
+                {(serviceDetails?.checkIn || booking?.start_date) && (
+                  <div>
+                    <p className="text-sm text-gray-600">
+                      {serviceType === 'Hotel' ? 'Check-in / Check-out' : 
+                       serviceType === 'Restaurant' ? 'Reservation Date' : 
+                       'Travel Date'}
+                    </p>
+                    <p className="font-semibold">
+                      {serviceType === 'Hotel' 
+                        ? `${serviceDetails?.checkIn} to ${serviceDetails?.checkOut}`
+                        : serviceType === 'Restaurant'
+                        ? `${serviceDetails?.reservationDate} at ${serviceDetails?.timeSlot}`
+                        : `${booking?.start_date ? new Date(booking.start_date).toLocaleDateString() : '-'} to ${booking?.end_date ? new Date(booking.end_date).toLocaleDateString() : '-'}`
+                      }
+                    </p>
+                  </div>
+                )}
                 <div>
-                  <p className="text-sm text-gray-600">
-                    {serviceType === 'Hotel' ? 'Check-in / Check-out' : 
-                     serviceType === 'Restaurant' ? 'Reservation Date' : 
-                     'Travel Date'}
-                  </p>
-                  <p className="font-semibold">
-                    {serviceType === 'Hotel' 
-                      ? `${serviceDetails?.checkIn} to ${serviceDetails?.checkOut}`
-                      : serviceType === 'Restaurant'
-                      ? `${serviceDetails?.reservationDate} at ${serviceDetails?.timeSlot}`
-                      : serviceType === 'Flight'
-                      ? serviceDetails?.travelDate
-                      : `${booking?.start_date ? new Date(booking.start_date).toLocaleDateString() : '-'} to ${booking?.end_date ? new Date(booking.end_date).toLocaleDateString() : '-'}`
-                    }
-                  </p>
+                  <p className="text-sm text-gray-600">Amount</p>
+                  <p className="text-[#0077b6] font-bold text-lg">₹{Number(paymentAmount).toLocaleString()}</p>
                 </div>
-              )}
-              <div>
-                <p className="text-sm text-gray-600">Amount</p>
-                <p className="text-[#0077b6] font-bold text-lg">₹{Number(paymentAmount).toLocaleString()}</p>
               </div>
-            </div>
+            )}
           </Card>
         )}
 

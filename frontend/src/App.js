@@ -26,6 +26,9 @@ import TicketVerify from "./pages/TicketVerify";
 import MyBookings from "./pages/MyBookings";
 import MyReceipts from "./pages/MyReceipts";
 import Flights from "./pages/Flights";
+import FlightResults from "./pages/FlightResults";
+import FlightBooking from "./pages/FlightBooking";
+import FlightTicket from "./pages/FlightTicket";
 import Buses from "./pages/Buses";
 import BusResults from "./pages/BusResults";
 import BusBooking from "./pages/BusBooking";
@@ -101,6 +104,9 @@ const AppContent = () => {
         <Route path="/planner" element={<TripPlanner />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/flights" element={<Flights />} />
+        <Route path="/flights/results" element={<FlightResults />} />
+        <Route path="/flights/booking" element={<ProtectedRoute><FlightBooking /></ProtectedRoute>} />
+        <Route path="/flight-ticket" element={<ProtectedRoute><FlightTicket /></ProtectedRoute>} />
         <Route path="/buses" element={<Buses />} />
         <Route path="/bus-results" element={<BusResults />} />
         <Route path="/bus-booking" element={<ProtectedRoute><BusBooking /></ProtectedRoute>} />
