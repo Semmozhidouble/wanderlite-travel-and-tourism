@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css'; // Import Leaflet CSS for maps
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AIProvider } from "./contexts/AIContext";
+import { NotificationProvider } from "./contexts/NotificationContext";
 import { ToastProvider } from "./components/Toast";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
@@ -141,15 +142,17 @@ const AppContent = () => {
 function App() {
   return (
     <AuthProvider>
-      <AIProvider>
-        <ToastProvider>
-          <div className="App">
-            <BrowserRouter>
-              <AppContent />
-            </BrowserRouter>
-          </div>
-        </ToastProvider>
-      </AIProvider>
+      <NotificationProvider>
+        <AIProvider>
+          <ToastProvider>
+            <div className="App">
+              <BrowserRouter>
+                <AppContent />
+              </BrowserRouter>
+            </div>
+          </ToastProvider>
+        </AIProvider>
+      </NotificationProvider>
     </AuthProvider>
   );
 }

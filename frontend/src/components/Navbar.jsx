@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
+import NotificationBell from './NotificationBell';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -134,15 +135,19 @@ const Navbar = () => {
           {/* Auth Section */}
           <div className="hidden md:flex items-center space-x-4">
             {isAuthenticated ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="flex items-center space-x-2">
-                    <div className="w-8 h-8 bg-gradient-to-r from-[#0077b6] to-[#48cae4] rounded-full flex items-center justify-center">
-                      <User className="w-4 h-4 text-white" />
-                    </div>
-                    <span className="text-sm font-medium">{user?.username || 'User'}</span>
-                  </Button>
-                </DropdownMenuTrigger>
+              <>
+                {/* Notification Bell */}
+                <NotificationBell scrolled={scrolled} />
+                
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="flex items-center space-x-2">
+                      <div className="w-8 h-8 bg-gradient-to-r from-[#0077b6] to-[#48cae4] rounded-full flex items-center justify-center">
+                        <User className="w-4 h-4 text-white" />
+                      </div>
+                      <span className="text-sm font-medium">{user?.username || 'User'}</span>
+                    </Button>
+                  </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem asChild>
                     <Link to="/trip-history" className="flex items-center space-x-2">
@@ -181,6 +186,7 @@ const Navbar = () => {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              </>
             ) : (
               <div className="flex items-center space-x-3">
                 <Link to="/login">

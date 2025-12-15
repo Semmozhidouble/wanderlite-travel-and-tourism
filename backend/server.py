@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, UploadFile, File, Form
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, UploadFile, File, Form, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 PDF_GENERATION_DISABLED = True  # Disable PDF generation due to dependency issues
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Generator
+from typing import List, Optional, Generator, Dict
 import uuid
 from datetime import datetime, timezone
 from passlib.context import CryptContext
@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 # import qrcode
 from io import BytesIO
 import base64
+import asyncio
 
 # Placeholder variables to avoid Pylance undefined variable warnings
 FPDF = None
@@ -89,6 +90,54 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# =============================
+# WebSocket Connection Manager for Real-Time Notifications
+# =============================
+class ConnectionManager:
+    def __init__(self):
+        # Maps user_id to list of WebSocket connections (user can have multiple tabs)
+        self.active_connections: Dict[str, List[WebSocket]] = {}
+    
+    async def connect(self, websocket: WebSocket, user_id: str):
+        await websocket.accept()
+        if user_id not in self.active_connections:
+            self.active_connections[user_id] = []
+        self.active_connections[user_id].append(websocket)
+        logging.info(f"WebSocket connected for user {user_id}")
+    
+    def disconnect(self, websocket: WebSocket, user_id: str):
+        if user_id in self.active_connections:
+            if websocket in self.active_connections[user_id]:
+                self.active_connections[user_id].remove(websocket)
+            if not self.active_connections[user_id]:
+                del self.active_connections[user_id]
+        logging.info(f"WebSocket disconnected for user {user_id}")
+    
+    async def send_to_user(self, user_id: str, message: dict):
+        """Send notification to a specific user"""
+        if user_id in self.active_connections:
+            disconnected = []
+            for connection in self.active_connections[user_id]:
+                try:
+                    await connection.send_json(message)
+                except Exception as e:
+                    logging.warning(f"Failed to send to user {user_id}: {e}")
+                    disconnected.append(connection)
+            # Clean up disconnected connections
+            for conn in disconnected:
+                self.active_connections[user_id].remove(conn)
+    
+    async def broadcast_to_all(self, message: dict):
+        """Broadcast notification to all connected users"""
+        for user_id in list(self.active_connections.keys()):
+            await self.send_to_user(user_id, message)
+    
+    def get_connected_users(self) -> List[str]:
+        """Get list of connected user IDs"""
+        return list(self.active_connections.keys())
+
+notification_manager = ConnectionManager()
 
 # Minimal auth router to satisfy frontend login calls
 auth_router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -2521,6 +2570,112 @@ async def get_transactions(
     ]
 
 
+# =============================
+# User Notifications
+# =============================
+@api_router.get("/notifications")
+async def get_user_notifications(
+    page: int = 1,
+    limit: int = 20,
+    unread_only: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get notifications for the current user"""
+    query = db.query(NotificationModel).filter(NotificationModel.user_id == current_user.id)
+    
+    if unread_only:
+        query = query.filter(NotificationModel.is_read == 0)
+    
+    total = query.count()
+    notifications = query.order_by(NotificationModel.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+    
+    return {
+        "notifications": [
+            {
+                "id": n.id,
+                "title": n.title,
+                "message": n.message,
+                "type": n.notification_type,
+                "is_read": bool(n.is_read),
+                "created_at": n.created_at.isoformat() if n.created_at else None
+            } for n in notifications
+        ],
+        "total": total,
+        "unread_count": db.query(NotificationModel).filter(
+            NotificationModel.user_id == current_user.id,
+            NotificationModel.is_read == 0
+        ).count()
+    }
+
+
+@api_router.get("/notifications/unread-count")
+async def get_unread_count(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get count of unread notifications"""
+    count = db.query(NotificationModel).filter(
+        NotificationModel.user_id == current_user.id,
+        NotificationModel.is_read == 0
+    ).count()
+    return {"unread_count": count}
+
+
+@api_router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark a notification as read"""
+    notification = db.query(NotificationModel).filter(
+        NotificationModel.id == notification_id,
+        NotificationModel.user_id == current_user.id
+    ).first()
+    
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    
+    notification.is_read = 1
+    db.commit()
+    return {"message": "Notification marked as read"}
+
+
+@api_router.post("/notifications/mark-all-read")
+async def mark_all_read(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark all notifications as read"""
+    db.query(NotificationModel).filter(
+        NotificationModel.user_id == current_user.id,
+        NotificationModel.is_read == 0
+    ).update({NotificationModel.is_read: 1})
+    db.commit()
+    return {"message": "All notifications marked as read"}
+
+
+@api_router.delete("/notifications/{notification_id}")
+async def delete_notification(
+    notification_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a notification"""
+    notification = db.query(NotificationModel).filter(
+        NotificationModel.id == notification_id,
+        NotificationModel.user_id == current_user.id
+    ).first()
+    
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    
+    db.delete(notification)
+    db.commit()
+    return {"message": "Notification deleted"}
+
+
 # Trip endpoints
 @api_router.post("/trips", response_model=Trip)
 async def create_trip(trip: TripCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -4700,6 +4855,14 @@ async def send_notification(
     db: Session = Depends(get_db)
 ):
     """Send notification to users"""
+    notification_data = {
+        "type": "notification",
+        "title": data.title,
+        "message": data.message,
+        "notification_type": data.notification_type,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
     if data.user_id:
         # Send to specific user
         notification = NotificationModel(
@@ -4710,11 +4873,17 @@ async def send_notification(
             notification_type=data.notification_type
         )
         db.add(notification)
+        db.commit()
+        
+        # Send real-time notification via WebSocket
+        notification_data["id"] = notification.id
+        await notification_manager.send_to_user(data.user_id, notification_data)
         count = 1
     else:
         # Send to all users
         users = db.query(UserModel).all()
         count = 0
+        user_ids = []
         for user in users:
             notification = NotificationModel(
                 user_id=user.id,
@@ -4724,9 +4893,13 @@ async def send_notification(
                 notification_type=data.notification_type
             )
             db.add(notification)
+            user_ids.append(user.id)
             count += 1
-    
-    db.commit()
+        
+        db.commit()
+        
+        # Broadcast to all connected users
+        await notification_manager.broadcast_to_all(notification_data)
     
     log_admin_action(db, admin.id, "send_notification", "notification", None, 
                      f"Sent notification to {count} user(s): {data.title}")
@@ -4947,6 +5120,61 @@ async def list_receipts(
 
 # Register admin router
 app.include_router(admin_router)
+
+
+# =============================
+# WebSocket Endpoint for Real-Time Notifications
+# =============================
+@app.websocket("/ws/notifications/{token}")
+async def websocket_notification_endpoint(websocket: WebSocket, token: str):
+    """WebSocket endpoint for real-time notifications"""
+    # Validate token and get user
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
+    except JWTError as e:
+        await websocket.close(code=4001, reason="Invalid token")
+        return
+    
+    # Connect the WebSocket
+    await notification_manager.connect(websocket, user_id)
+    
+    try:
+        # Send initial unread count
+        db = SessionLocal()
+        try:
+            unread_count = db.query(NotificationModel).filter(
+                NotificationModel.user_id == user_id,
+                NotificationModel.is_read == 0
+            ).count()
+            await websocket.send_json({
+                "type": "init",
+                "unread_count": unread_count
+            })
+        finally:
+            db.close()
+        
+        # Keep connection alive and listen for pings
+        while True:
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30)
+                # Handle ping/pong to keep connection alive
+                if data == "ping":
+                    await websocket.send_text("pong")
+            except asyncio.TimeoutError:
+                # Send heartbeat
+                try:
+                    await websocket.send_json({"type": "heartbeat"})
+                except:
+                    break
+    except WebSocketDisconnect:
+        notification_manager.disconnect(websocket, user_id)
+    except Exception as e:
+        logging.error(f"WebSocket error for user {user_id}: {e}")
+        notification_manager.disconnect(websocket, user_id)
 
 
 if __name__ == "__main__":
