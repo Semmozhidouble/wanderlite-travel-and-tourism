@@ -58,49 +58,49 @@ const HotelDetail = () => {
     try {
       const nights = differenceInDays(bookingDetails.checkOut, bookingDetails.checkIn);
       const selectedRoom = roomTypes.find(r => r.value === bookingDetails.roomType);
-      const totalPrice = hotel.price_per_night * selectedRoom.priceMultiplier * nights;
+      const baseFare = hotel.price_per_night * selectedRoom.priceMultiplier * Math.max(1, nights);
+      const taxes = parseFloat((baseFare * 0.15).toFixed(2));
+      const finalTotal = parseFloat((baseFare + taxes).toFixed(2));
 
       const serviceJson = JSON.stringify({
         ...hotel,
-        checkIn: format(bookingDetails.checkIn, 'yyyy-MM-dd'),
-        checkOut: format(bookingDetails.checkOut, 'yyyy-MM-dd'),
-        nights,
+        check_in: format(bookingDetails.checkIn, 'yyyy-MM-dd'),
+        check_out: format(bookingDetails.checkOut, 'yyyy-MM-dd'),
+        nights: Math.max(1, nights),
         guests: bookingDetails.guests,
-        roomType: selectedRoom.label,
-        destination: destination?.name
+        room_type: selectedRoom.label,
+        destination: destination?.name,
+        baseFare,
+        taxes,
+        total_price: finalTotal,
+        currency: hotel.currency || 'INR'
       });
 
       const response = await api.post('/api/bookings/service', {
         service_type: 'Hotel',
-        destination: hotel.location || hotel.city || 'Unknown',
-        travelers: bookingDetails.guests || 1,
-        amount: totalPrice,
-        service_details: {
-          hotel: hotel,
-          check_in: format(bookingDetails.checkIn, 'yyyy-MM-dd'),
-          check_out: format(bookingDetails.checkOut, 'yyyy-MM-dd'),
-          guests: bookingDetails.guests,
-          nights: nights,
-          roomType: selectedRoom.label,
-          currency: hotel.currency
-        }
+        service_json: serviceJson,
+        total_price: finalTotal,
+        currency: hotel.currency || 'INR'
       });
 
       navigate('/payment', {
         state: {
           bookingId: response.data.id,
           bookingRef: response.data.booking_ref,
-          amount: totalPrice,
+          amount: finalTotal,
           currency: hotel.currency || 'INR',
           serviceType: 'Hotel',
           serviceDetails: {
             ...hotel,
             checkIn: format(bookingDetails.checkIn, 'MMM dd, yyyy'),
             checkOut: format(bookingDetails.checkOut, 'MMM dd, yyyy'),
-            nights,
+            nights: Math.max(1, nights),
             guests: bookingDetails.guests,
             roomType: selectedRoom.label,
-            destination: destination?.name
+            destination: destination?.name,
+            baseFare,
+            taxes,
+            total_price: finalTotal
           }
         }
       });

@@ -62,7 +62,9 @@ const RestaurantDetail = () => {
 
     setLoading(true);
     try {
-      const totalPrice = restaurant.average_cost || 1000; // Default cost for reservation
+      const subtotal = restaurant.average_cost || 1000;
+      const taxes = parseFloat(((subtotal || 0) * 0.15).toFixed(2));
+      const finalTotal = parseFloat(((subtotal || 0) + taxes).toFixed(2));
 
       const serviceJson = JSON.stringify({
         ...restaurant,
@@ -73,29 +75,25 @@ const RestaurantDetail = () => {
         guestEmail: bookingDetails.email,
         guestPhone: bookingDetails.phone,
         specialRequest: bookingDetails.specialRequest,
-        destination: destination?.name
+        destination: destination?.name,
+        subtotal,
+        taxes,
+        total_price: finalTotal,
+        currency: restaurant.currency || 'INR'
       });
 
       const response = await api.post('/api/bookings/service', {
         service_type: 'Restaurant',
-        destination: destination?.name || restaurant.location || 'Unknown',
-        travelers: bookingDetails.guests || 1,
-        amount: totalPrice,
-        service_details: {
-          restaurant: restaurant,
-          date: bookingDetails.date,
-          time: bookingDetails.time,
-          guests: bookingDetails.guests,
-          specialRequest: bookingDetails.specialRequest,
-          currency: restaurant.currency || 'INR'
-        }
+        service_json: serviceJson,
+        total_price: finalTotal,
+        currency: restaurant.currency || 'INR'
       });
 
       navigate('/payment', {
         state: {
           bookingId: response.data.id,
           bookingRef: response.data.booking_ref,
-          amount: totalPrice,
+          amount: finalTotal,
           currency: restaurant.currency || 'INR',
           serviceType: 'Restaurant',
           serviceDetails: {
@@ -104,7 +102,10 @@ const RestaurantDetail = () => {
             timeSlot: bookingDetails.timeSlot,
             guests: bookingDetails.guests,
             guestName: bookingDetails.fullName,
-            destination: destination?.name
+            destination: destination?.name,
+            subtotal,
+            taxes,
+            total_price: finalTotal
           }
         }
       });

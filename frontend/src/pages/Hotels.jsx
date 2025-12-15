@@ -56,39 +56,37 @@ const Hotels = () => {
       const nights = Math.ceil(
         (new Date(searchParams.check_out) - new Date(searchParams.check_in)) / (1000 * 60 * 60 * 24)
       );
-      const totalPrice = hotel.price_per_night * nights;
+      const baseFare = hotel.price_per_night * Math.max(1, nights);
+      const taxes = parseFloat((baseFare * 0.15).toFixed(2));
+      const finalTotal = parseFloat((baseFare + taxes).toFixed(2));
 
       const serviceJson = JSON.stringify({
         ...hotel,
         check_in: searchParams.check_in,
         check_out: searchParams.check_out,
         guests: searchParams.guests,
-        nights
+        nights: Math.max(1, nights),
+        baseFare,
+        taxes,
+        total_price: finalTotal,
+        currency: hotel.currency || 'INR'
       });
 
       const response = await api.post('/api/bookings/service', {
         service_type: 'Hotel',
-        destination: hotel.location || hotel.city || 'Unknown',
-        travelers: searchParams.guests || 1,
-        amount: totalPrice,
-        service_details: {
-          hotel: hotel,
-          check_in: searchParams.check_in,
-          check_out: searchParams.check_out,
-          guests: searchParams.guests,
-          nights: nights,
-          currency: hotel.currency
-        }
+        service_json: serviceJson,
+        total_price: finalTotal,
+        currency: hotel.currency || 'INR'
       });
 
       navigate('/payment', {
         state: {
           bookingId: response.data.id,
           bookingRef: response.data.booking_ref,
-          amount: totalPrice,
-          currency: hotel.currency,
+          amount: finalTotal,
+          currency: hotel.currency || 'INR',
           serviceType: 'Hotel',
-          serviceDetails: { ...hotel, nights }
+          serviceDetails: { ...hotel, nights: Math.max(1, nights), baseFare, taxes, total_price: finalTotal }
         }
       });
     } catch (error) {

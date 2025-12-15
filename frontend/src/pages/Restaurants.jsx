@@ -38,24 +38,33 @@ const Restaurants = () => {
 
   const bookRestaurant = async (restaurant) => {
     try {
+      const subtotal = restaurant.average_cost || 0;
+      const taxes = parseFloat(((subtotal || 0) * 0.15).toFixed(2));
+      const finalTotal = parseFloat(((subtotal || 0) + taxes).toFixed(2));
+
+      const serviceJson = JSON.stringify({
+        ...restaurant,
+        subtotal,
+        taxes,
+        total_price: finalTotal,
+        currency: restaurant.currency || 'INR'
+      });
+
       const response = await api.post('/api/bookings/service', {
         service_type: 'Restaurant',
-        destination: restaurant.location || restaurant.city || 'Unknown',
-        travelers: 1,
-        amount: restaurant.average_cost || 0,
-        service_details: {
-          restaurant: restaurant
-        }
+        service_json: serviceJson,
+        total_price: finalTotal,
+        currency: restaurant.currency || 'INR'
       });
 
       navigate('/payment', {
         state: {
           bookingId: response.data.id,
           bookingRef: response.data.booking_ref,
-          amount: restaurant.average_cost,
-          currency: restaurant.currency,
+          amount: finalTotal,
+          currency: restaurant.currency || 'INR',
           serviceType: 'Restaurant',
-          serviceDetails: restaurant
+          serviceDetails: { ...restaurant, subtotal, taxes, total_price: finalTotal }
         }
       });
     } catch (error) {

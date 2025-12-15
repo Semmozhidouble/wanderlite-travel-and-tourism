@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import api from '../services/api';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Camera, Save, X, Edit3, Trash2 } from 'lucide-react';
 
 const Profile = () => {
-  const { token, logout } = useAuth();
+  const { logout } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [trips, setTrips] = useState([]);
@@ -32,7 +32,7 @@ const Profile = () => {
     const init = async () => {
       try {
         const me = await api.get('/api/auth/me');
-        setProfile({ ...profile, ...me.data });
+        setProfile((p) => ({ ...p, ...me.data }));
         const t = await api.get('/api/trips');
         setTrips(t.data || []);
       } catch (e) {
@@ -55,8 +55,8 @@ const Profile = () => {
     const form = new FormData();
     form.append('file', file);
     try {
-      const resp = await axios.post('/api/profile/avatar', form, {
-        headers: { ...headers, 'Content-Type': 'multipart/form-data' },
+      const resp = await api.post('/api/profile/avatar', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
       setProfile((p) => ({ ...p, profile_image: resp.data.image_url }));
     } catch (err) {
@@ -79,7 +79,7 @@ const Profile = () => {
         language_preference: profile.language_preference,
         notifications_enabled: !!profile.notifications_enabled,
       };
-      const resp = await axios.put('/api/profile', payload, { headers });
+      const resp = await api.put('/api/profile', payload);
       setProfile((p) => ({ ...p, ...resp.data }));
       setEditMode(false);
     } catch (e) {
@@ -93,7 +93,7 @@ const Profile = () => {
   const deleteAccount = async () => {
     if (!window.confirm('Are you sure you want to delete your account? This cannot be undone.')) return;
     try {
-      await axios.delete('/api/auth/account', { headers });
+      await api.delete('/api/auth/account');
       logout();
     } catch (e) {
       console.error('Delete account failed', e);
