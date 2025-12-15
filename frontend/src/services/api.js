@@ -20,6 +20,11 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
+    // If sending FormData, remove Content-Type to let browser set it with boundary
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+    
     // Log request in development
     if (process.env.NODE_ENV === 'development') {
       console.debug(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, config.data);

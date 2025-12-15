@@ -47,6 +47,37 @@ from sqlalchemy.engine import url as sa_url
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# =============================
+# Encryption Utility (AES-256-GCM)
+# =============================
+ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY")
+if not ENCRYPTION_KEY:
+    # Generate a key for demo purposes (store this in .env for production)
+    ENCRYPTION_KEY = Fernet.generate_key().decode()
+    logging.warning("No ENCRYPTION_KEY found in .env, using generated key (not persistent!)")
+
+fernet = Fernet(ENCRYPTION_KEY.encode() if isinstance(ENCRYPTION_KEY, str) else ENCRYPTION_KEY)
+
+def encrypt_field(plain_text: str) -> str:
+    """Encrypt sensitive field using Fernet (AES-128 CBC + HMAC)"""
+    if not plain_text:
+        return ""
+    return fernet.encrypt(plain_text.encode()).decode()
+
+def decrypt_field(encrypted_text: str) -> str:
+    """Decrypt sensitive field"""
+    if not encrypted_text:
+        return ""
+    try:
+        return fernet.decrypt(encrypted_text.encode()).decode()
+    except Exception:
+        return ""
+
+def hash_id_number(id_number: str, user_id: str) -> str:
+    """Hash ID number with user-specific salt"""
+    salt = f"{user_id}_wanderlite_salt"
+    return hashlib.sha256(f"{id_number}{salt}".encode()).hexdigest()
+
 # Initialize FastAPI app
 app = FastAPI(title="Wanderlite API")
 
@@ -126,6 +157,64 @@ class UserModel(Base):
     food_preference = Column(String(50), nullable=True)
     language_preference = Column(String(50), nullable=True)
     notifications_enabled = Column(Integer, default=1)
+    # KYC & Payment flags
+    is_kyc_completed = Column(Integer, default=0)
+    payment_profile_completed = Column(Integer, default=0)
+
+
+class KYCDetailsModel(Base):
+    __tablename__ = "kyc_details"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    full_name = Column(String(255), nullable=False)
+    dob = Column(String(20), nullable=False)  # YYYY-MM-DD
+    gender = Column(String(20), nullable=False)  # male / female / other
+    nationality = Column(String(100), nullable=False)
+    id_type = Column(String(50), nullable=False)  # aadhaar / passport / voterid
+    id_number_hash = Column(String(255), nullable=False)  # hashed ID number
+    id_proof_front_path = Column(String(500), nullable=True)
+    id_proof_back_path = Column(String(500), nullable=True)
+    selfie_path = Column(String(500), nullable=True)
+    address_line = Column(String(500), nullable=False)
+    city = Column(String(100), nullable=False)
+    state = Column(String(100), nullable=False)
+    country = Column(String(100), nullable=False)
+    pincode = Column(String(20), nullable=False)
+    verification_status = Column(String(20), default="verified")  # pending / verified / rejected (demo: auto-verify)
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PaymentProfileModel(Base):
+    __tablename__ = "payment_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    account_holder_name = Column(String(255), nullable=False)
+    bank_name = Column(String(255), nullable=False)
+    account_number_encrypted = Column(Text, nullable=False)  # AES-256-GCM encrypted
+    ifsc_encrypted = Column(Text, nullable=False)
+    upi_encrypted = Column(Text, nullable=True)  # optional
+    default_method = Column(String(20), default="bank")  # bank / upi
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class TransactionModel(Base):
+    __tablename__ = "transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), ForeignKey("users.id"), index=True, nullable=False)
+    booking_id = Column(String(36), index=True, nullable=True)  # reference to service_bookings
+    service_type = Column(String(30), nullable=True)  # flight / hotel / restaurant
+    amount = Column(Float, nullable=False)
+    currency = Column(String(10), default="INR")
+    payment_method = Column(String(50), nullable=False)  # saved_bank / saved_upi / one_time_card / one_time_upi
+    status = Column(String(20), default="success")  # success / failed
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class TripModel(Base):
@@ -308,6 +397,60 @@ class UserPublic(BaseModel):
     food_preference: Optional[str] = None
     language_preference: Optional[str] = None
     notifications_enabled: Optional[int] = 1
+    is_kyc_completed: Optional[int] = 0
+    payment_profile_completed: Optional[int] = 0
+
+
+class KYCSubmit(BaseModel):
+    full_name: str
+    dob: str  # YYYY-MM-DD
+    gender: str  # male / female / other
+    nationality: str
+    id_type: str  # aadhaar / passport / voterid
+    id_number: str  # will be hashed
+    address_line: str
+    city: str
+    state: str
+    country: str
+    pincode: str
+    # File URLs handled separately via multipart upload
+
+
+class KYCStatus(BaseModel):
+    is_completed: bool
+    verification_status: Optional[str] = None  # pending / verified / rejected
+    full_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class PaymentProfileSubmit(BaseModel):
+    account_holder_name: str
+    bank_name: str
+    account_number: str  # will be encrypted
+    ifsc: str  # will be encrypted
+    upi: Optional[str] = None  # will be encrypted
+    default_method: str = "bank"  # bank / upi
+
+
+class PaymentProfileStatus(BaseModel):
+    is_completed: bool
+    is_payment_profile_completed: Optional[bool] = False
+    account_holder_name: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_last_4: Optional[str] = None  # masked
+    default_method: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class TransactionRecord(BaseModel):
+    id: str
+    booking_id: Optional[str] = None
+    service_type: Optional[str] = None
+    amount: float
+    currency: str
+    payment_method: str
+    status: str
+    created_at: datetime
 
 
 class ProfileUpdate(BaseModel):
@@ -1729,6 +1872,8 @@ async def auth_me(current_user: User = Depends(get_current_user)):
             food_preference=row.food_preference,
             language_preference=row.language_preference,
             notifications_enabled=row.notifications_enabled,
+            is_kyc_completed=row.is_kyc_completed,
+            payment_profile_completed=row.payment_profile_completed,
         )
 
 
@@ -1866,6 +2011,276 @@ def login_dev(req: LoginRequest):
     access_token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     
     return {"access_token": access_token, "token_type": "bearer", "user": {"email": user.email}}
+
+
+# =============================
+# KYC Endpoints
+# =============================
+@api_router.post("/kyc")
+async def submit_kyc(
+    full_name: str = Form(...),
+    dob: str = Form(...),
+    gender: str = Form(...),
+    nationality: str = Form(...),
+    id_type: str = Form(...),
+    id_number: str = Form(...),
+    address_line: str = Form(...),
+    city: str = Form(...),
+    state: str = Form(...),
+    country: str = Form(...),
+    pincode: str = Form(...),
+    id_proof_front: Optional[UploadFile] = File(None),
+    id_proof_back: Optional[UploadFile] = File(None),
+    selfie: Optional[UploadFile] = File(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Submit KYC details with optional file uploads"""
+    
+    # Check if KYC already exists
+    existing = db.query(KYCDetailsModel).filter(KYCDetailsModel.user_id == current_user.id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="KYC already submitted")
+    
+    # Hash ID number with user-specific salt
+    id_hash = hash_id_number(id_number, current_user.id)
+    
+    # Handle file uploads
+    id_front_path = None
+    id_back_path = None
+    selfie_path_var = None
+    
+    uploads_dir = ROOT_DIR / "uploads" / "kyc" / str(current_user.id)
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    
+    if id_proof_front:
+        front_path = uploads_dir / f"id_front_{uuid.uuid4().hex[:8]}.jpg"
+        with open(front_path, "wb") as f:
+            f.write(await id_proof_front.read())
+        id_front_path = f"/uploads/kyc/{current_user.id}/{front_path.name}"
+    
+    if id_proof_back:
+        back_path = uploads_dir / f"id_back_{uuid.uuid4().hex[:8]}.jpg"
+        with open(back_path, "wb") as f:
+            f.write(await id_proof_back.read())
+        id_back_path = f"/uploads/kyc/{current_user.id}/{back_path.name}"
+    
+    if selfie:
+        selfie_file = uploads_dir / f"selfie_{uuid.uuid4().hex[:8]}.jpg"
+        with open(selfie_file, "wb") as f:
+            f.write(await selfie.read())
+        selfie_path_var = f"/uploads/kyc/{current_user.id}/{selfie_file.name}"
+    
+    # Create KYC record (auto-verified for demo)
+    kyc_record = KYCDetailsModel(
+        user_id=current_user.id,
+        full_name=full_name,
+        dob=dob,
+        gender=gender,
+        nationality=nationality,
+        id_type=id_type,
+        id_number_hash=id_hash,
+        id_proof_front_path=id_front_path,
+        id_proof_back_path=id_back_path,
+        selfie_path=selfie_path_var,
+        address_line=address_line,
+        city=city,
+        state=state,
+        country=country,
+        pincode=pincode,
+        verification_status="verified",  # Auto-verify for demo
+        submitted_at=datetime.now(timezone.utc),
+        verified_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc)
+    )
+    db.add(kyc_record)
+    
+    # Update user KYC flag
+    user_row = db.query(UserModel).filter(UserModel.id == current_user.id).first()
+    if user_row:
+        user_row.is_kyc_completed = 1
+    
+    db.commit()
+    
+    return {
+        "message": "KYC submitted successfully",
+        "status": "verified",
+        "is_kyc_completed": True
+    }
+
+
+@api_router.get("/kyc/status", response_model=KYCStatus)
+async def get_kyc_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get KYC verification status"""
+    kyc = db.query(KYCDetailsModel).filter(KYCDetailsModel.user_id == current_user.id).first()
+    
+    if not kyc:
+        return KYCStatus(is_completed=False)
+    
+    return KYCStatus(
+        is_completed=True,
+        verification_status=kyc.verification_status,
+        full_name=kyc.full_name,
+        created_at=kyc.created_at
+    )
+
+
+# =============================
+# Payment Profile Endpoints
+# =============================
+@api_router.post("/payment-profile")
+async def submit_payment_profile(
+    profile: PaymentProfileSubmit,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Submit payment profile with encrypted bank details"""
+    
+    # Check if profile already exists
+    existing = db.query(PaymentProfileModel).filter(PaymentProfileModel.user_id == current_user.id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Payment profile already exists")
+    
+    # Encrypt sensitive fields
+    account_encrypted = encrypt_field(profile.account_number)
+    ifsc_encrypted = encrypt_field(profile.ifsc)
+    upi_encrypted = encrypt_field(profile.upi) if profile.upi else None
+    
+    # Create payment profile
+    payment_profile = PaymentProfileModel(
+        user_id=current_user.id,
+        account_holder_name=profile.account_holder_name,
+        bank_name=profile.bank_name,
+        account_number_encrypted=account_encrypted,
+        ifsc_encrypted=ifsc_encrypted,
+        upi_encrypted=upi_encrypted,
+        default_method=profile.default_method,
+        created_at=datetime.now(timezone.utc)
+    )
+    db.add(payment_profile)
+    
+    # Update user payment profile flag
+    user_row = db.query(UserModel).filter(UserModel.id == current_user.id).first()
+    if user_row:
+        user_row.payment_profile_completed = 1
+    
+    db.commit()
+    
+    return {
+        "message": "Payment profile saved successfully",
+        "is_payment_profile_completed": True
+    }
+
+
+@api_router.get("/payment-profile/status", response_model=PaymentProfileStatus)
+async def get_payment_profile_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get payment profile status (never return decrypted data)"""
+    profile = db.query(PaymentProfileModel).filter(PaymentProfileModel.user_id == current_user.id).first()
+    
+    if not profile:
+        return PaymentProfileStatus(is_completed=False, is_payment_profile_completed=False)
+    
+    # Decrypt only to get last 4 digits for display
+    account_number = decrypt_field(profile.account_number_encrypted)
+    last_4 = account_number[-4:] if len(account_number) >= 4 else "****"
+    
+    return PaymentProfileStatus(
+        is_completed=True,
+        is_payment_profile_completed=True,
+        account_holder_name=profile.account_holder_name,
+        bank_name=profile.bank_name,
+        account_last_4=last_4,
+        default_method=profile.default_method,
+        created_at=profile.created_at
+    )
+
+
+# =============================
+# Mock Payment Endpoint
+# =============================
+@api_router.post("/payments/mock")
+async def mock_payment(
+    booking_id: str,
+    amount: float,
+    currency: str = "INR",
+    payment_method: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Simulate payment processing (always succeeds for demo)"""
+    
+    # Get booking details
+    booking = db.query(ServiceBookingModel).filter(ServiceBookingModel.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Determine payment method
+    if not payment_method:
+        # Check if user has payment profile
+        profile = db.query(PaymentProfileModel).filter(PaymentProfileModel.user_id == current_user.id).first()
+        if profile:
+            payment_method = f"saved_{profile.default_method}"
+        else:
+            payment_method = "one_time_card"
+    
+    # Create transaction record
+    transaction = TransactionModel(
+        user_id=current_user.id,
+        booking_id=booking_id,
+        service_type=booking.service_type,
+        amount=amount,
+        currency=currency,
+        payment_method=payment_method,
+        status="success",
+        created_at=datetime.now(timezone.utc)
+    )
+    db.add(transaction)
+    
+    # Update booking status to paid
+    booking.status = "Paid"
+    
+    db.commit()
+    
+    return {
+        "transaction_id": transaction.id,
+        "status": "success",
+        "payment_method": payment_method,
+        "amount": amount,
+        "currency": currency
+    }
+
+
+# =============================
+# Transactions History
+# =============================
+@api_router.get("/transactions", response_model=List[TransactionRecord])
+async def get_transactions(
+    service_type: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get user transaction history with optional filtering"""
+    query = db.query(TransactionModel).filter(TransactionModel.user_id == current_user.id)
+    
+    if service_type:
+        query = query.filter(TransactionModel.service_type == service_type)
+    
+    transactions = query.order_by(TransactionModel.created_at.desc()).all()
+    
+    return [
+        TransactionRecord(
+            id=t.id,
+            booking_id=t.booking_id,
+            service_type=t.service_type,
+            amount=t.amount,
+            currency=t.currency,
+            payment_method=t.payment_method,
+            status=t.status,
+            created_at=t.created_at
+        )
+        for t in transactions
+    ]
+
 
 # Trip endpoints
 @api_router.post("/trips", response_model=Trip)
@@ -2320,26 +2735,33 @@ async def get_destinations(category: Optional[str] = None, search: Optional[str]
             continue
 
         try:
-            # Fetch city details from OpenTripMap
-            geoname_url = f"https://api.opentripmap.com/0.1/en/places/geoname?name={city['name']}"
-            geoname_response = requests.get(geoname_url)
-            geoname_data = geoname_response.json() if geoname_response.status_code == 200 else {}
+            # Fetch city details from OpenTripMap with timeout (2 seconds)
+            geoname_data = {}
+            try:
+                geoname_url = f"https://api.opentripmap.com/0.1/en/places/geoname?name={city['name']}"
+                geoname_response = requests.get(geoname_url, timeout=2)
+                geoname_data = geoname_response.json() if geoname_response.status_code == 200 else {}
+            except (requests.Timeout, requests.ConnectionError):
+                pass  # Skip external API on timeout, use defaults
 
-            # Fetch nearby attractions
-            radius_url = f"https://api.opentripmap.com/0.1/en/places/radius?radius=5000&lon={city['lon']}&lat={city['lat']}&kinds=museums,historical_places,natural,beaches,urban_environment&limit=5"
-            radius_response = requests.get(radius_url)
+            # Fetch nearby attractions with timeout (2 seconds)
             attractions = []
-            if radius_response.status_code == 200:
-                places_data = radius_response.json()
-                attractions = [feature["properties"]["name"] for feature in places_data.get("features", []) if "properties" in feature and "name" in feature["properties"]]
+            try:
+                radius_url = f"https://api.opentripmap.com/0.1/en/places/radius?radius=5000&lon={city['lon']}&lat={city['lat']}&kinds=museums,historical_places,natural,beaches,urban_environment&limit=5"
+                radius_response = requests.get(radius_url, timeout=2)
+                if radius_response.status_code == 200:
+                    places_data = radius_response.json()
+                    attractions = [feature["properties"]["name"] for feature in places_data.get("features", []) if "properties" in feature and "name" in feature["properties"]]
+            except (requests.Timeout, requests.ConnectionError):
+                pass  # Skip external API on timeout
 
-            # Fetch real weather data
+            # Fetch real weather data with timeout (2 seconds)
             weather_api_key = os.environ.get('OPENWEATHER_API_KEY')
             weather = {"temp": 25, "condition": "Sunny", "humidity": 60}  # Default mock
             if weather_api_key:
                 try:
                     weather_url = f"http://api.openweathermap.org/data/2.5/weather?q={city['name']}&appid={weather_api_key}&units=metric"
-                    weather_response = requests.get(weather_url)
+                    weather_response = requests.get(weather_url, timeout=2)
                     if weather_response.status_code == 200:
                         weather_data = weather_response.json()
                         weather = {
@@ -2347,8 +2769,8 @@ async def get_destinations(category: Optional[str] = None, search: Optional[str]
                             "condition": weather_data["weather"][0]["description"],
                             "humidity": weather_data["main"]["humidity"]
                         }
-                except:
-                    pass  # Use default mock
+                except (requests.Timeout, requests.ConnectionError):
+                    pass  # Use default mock on timeout
 
             # Map to Destination model
             dest = {
@@ -2672,8 +3094,16 @@ async def create_service_booking(
     booking: ServiceBookingCreate,
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new service booking (flight/hotel/restaurant)"""
+    """Create a new service booking (flight/hotel/restaurant) with KYC check"""
     db: Session = next(get_db())
+    
+    # Check if KYC is completed
+    user = db.query(UserModel).filter(UserModel.id == current_user.id).first()
+    if not user or not user.is_kyc_completed:
+        raise HTTPException(
+            status_code=403,
+            detail="Please complete KYC verification before booking"
+        )
     
     booking_ref = f"{booking.service_type[:2].upper()}{uuid.uuid4().hex[:8].upper()}"
     

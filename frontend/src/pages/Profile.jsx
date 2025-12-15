@@ -7,7 +7,9 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
 import { useAuth } from '../contexts/AuthContext';
-import { Camera, Save, X, Edit3, Trash2 } from 'lucide-react';
+import { Camera, Save, X, Edit3, Trash2, ShieldCheck, CreditCard, AlertCircle, Receipt } from 'lucide-react';
+import KYCForm from '../components/KYCForm';
+import PaymentProfileForm from '../components/PaymentProfileForm';
 
 const Profile = () => {
   const { logout } = useAuth();
@@ -16,10 +18,15 @@ const Profile = () => {
   const [trips, setTrips] = useState([]);
   const [editMode, setEditMode] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [showKYC, setShowKYC] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
+  const [transactions, setTransactions] = useState([]);
   const [profile, setProfile] = useState({
     id: '', email: '', username: '', name: '', phone: '', profile_image: '',
     favorite_travel_type: '', preferred_budget_range: '', climate_preference: '',
     food_preference: '', language_preference: '', notifications_enabled: 1,
+    is_kyc_completed: false,
+    payment_profile_completed: false,
   });
 
   const travelTypes = ['Adventure', 'Beach', 'Heritage', 'Urban', 'Nature'];
@@ -35,6 +42,12 @@ const Profile = () => {
         setProfile((p) => ({ ...p, ...me.data }));
         const t = await api.get('/api/trips');
         setTrips(t.data || []);
+        
+        // Fetch transactions if KYC completed
+        if (me.data.is_kyc_completed) {
+          const trans = await api.get('/api/transactions');
+          setTransactions(trans.data || []);
+        }
       } catch (e) {
         console.error('Failed to load profile', e);
       } finally {
@@ -101,6 +114,18 @@ const Profile = () => {
     }
   };
 
+  const handleKYCSuccess = async () => {
+    setShowKYC(false);
+    const me = await api.get('/api/auth/me');
+    setProfile((p) => ({ ...p, ...me.data }));
+  };
+
+  const handlePaymentSuccess = async () => {
+    setShowPayment(false);
+    const me = await api.get('/api/auth/me');
+    setProfile((p) => ({ ...p, ...me.data }));
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen pt-24 pb-16 flex items-center justify-center">
@@ -112,6 +137,89 @@ const Profile = () => {
   return (
     <div className="min-h-screen pt-24 pb-16 bg-gradient-to-b from-[#E1F0FD] to-white">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+        {/* KYC Banner */}
+        {!profile.is_kyc_completed && (
+          <Card className="p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200 shadow-lg">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <AlertCircle className="w-6 h-6 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-amber-900 mb-2">Complete KYC Verification</h3>
+                <p className="text-sm text-amber-800 mb-4">
+                  To book flights, hotels, or restaurants, you must complete your KYC verification. 
+                  This is a one-time process that takes less than 5 minutes.
+                </p>
+                <Button 
+                  onClick={() => setShowKYC(true)}
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  <ShieldCheck className="w-4 h-4 mr-2" />
+                  Start KYC Verification
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Payment Profile Banner */}
+        {profile.is_kyc_completed && !profile.payment_profile_completed && (
+          <Card className="p-6 bg-gradient-to-r from-green-50 to-emerald-50 border-green-200 shadow-lg">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                <CreditCard className="w-6 h-6 text-green-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-green-900 mb-2">Set Up Payment Profile</h3>
+                <p className="text-sm text-green-800 mb-4">
+                  Save your bank details for quick one-click checkout. Your information is encrypted and secured.
+                </p>
+                <Button 
+                  onClick={() => setShowPayment(true)}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <CreditCard className="w-4 h-4 mr-2" />
+                  Add Payment Profile
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Show KYC Form */}
+        {showKYC && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white">
+                <h2 className="text-xl font-bold">KYC Verification</h2>
+                <Button variant="ghost" onClick={() => setShowKYC(false)}>
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+              <div className="p-6">
+                <KYCForm onSuccess={handleKYCSuccess} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Show Payment Form */}
+        {showPayment && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white">
+                <h2 className="text-xl font-bold">Payment Profile</h2>
+                <Button variant="ghost" onClick={() => setShowPayment(false)}>
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+              <div className="p-6">
+                <PaymentProfileForm onSuccess={handlePaymentSuccess} />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Profile Overview */}
         <Card className="p-6 md:p-8 shadow-xl border-0 bg-white">
           <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
@@ -256,6 +364,73 @@ const Profile = () => {
             </div>
           )}
         </Card>
+
+        {/* Verification Status */}
+        <Card className="p-6 md:p-8 shadow-xl border-0 bg-white">
+          <h2 className="text-2xl font-bold text-[#31A8E0] mb-6">Verification Status</h2>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center gap-3">
+                <ShieldCheck className={`w-6 h-6 ${profile.is_kyc_completed ? 'text-green-600' : 'text-gray-400'}`} />
+                <div>
+                  <div className="font-semibold text-gray-900">KYC Verification</div>
+                  <div className="text-sm text-gray-600">Identity verification completed</div>
+                </div>
+              </div>
+              <div className={`px-4 py-1 rounded-full text-sm font-medium ${profile.is_kyc_completed ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                {profile.is_kyc_completed ? 'Verified' : 'Pending'}
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center gap-3">
+                <CreditCard className={`w-6 h-6 ${profile.payment_profile_completed ? 'text-green-600' : 'text-gray-400'}`} />
+                <div>
+                  <div className="font-semibold text-gray-900">Payment Profile</div>
+                  <div className="text-sm text-gray-600">Bank details saved for quick checkout</div>
+                </div>
+              </div>
+              <div className={`px-4 py-1 rounded-full text-sm font-medium ${profile.payment_profile_completed ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                {profile.payment_profile_completed ? 'Active' : 'Not Set'}
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Transaction History */}
+        {profile.is_kyc_completed && transactions.length > 0 && (
+          <Card className="p-6 md:p-8 shadow-xl border-0 bg-white">
+            <h2 className="text-2xl font-bold text-[#31A8E0] mb-6 flex items-center gap-2">
+              <Receipt className="w-6 h-6" />
+              Transaction History
+            </h2>
+            <div className="space-y-3">
+              {transactions.slice(0, 5).map((txn) => (
+                <div key={txn.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-900">{txn.service_type}</div>
+                    <div className="text-sm text-gray-600">
+                      {new Date(txn.created_at).toLocaleDateString()} • {txn.payment_method}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold text-gray-900">₹{txn.amount.toFixed(2)}</div>
+                    <div className={`text-xs ${txn.status === 'completed' ? 'text-green-600' : txn.status === 'pending' ? 'text-amber-600' : 'text-red-600'}`}>
+                      {txn.status}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {transactions.length > 5 && (
+              <div className="pt-4 text-center">
+                <Button variant="outline" className="text-[#31A8E0] border-[#31A8E0]">
+                  View All Transactions
+                </Button>
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Account Settings */}
         <Card className="p-6 md:p-8 shadow-xl border-0 bg-white">

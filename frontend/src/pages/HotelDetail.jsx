@@ -54,6 +54,20 @@ const HotelDetail = () => {
       return;
     }
 
+    // Check KYC status
+    try {
+      const response = await api.get('/api/auth/me');
+      if (!response.data.is_kyc_completed) {
+        alert('Please complete your KYC verification before booking. You will be redirected to your profile.');
+        navigate('/profile');
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to check KYC status:', error);
+      alert('Unable to verify your account. Please try again.');
+      return;
+    }
+
     setLoading(true);
     try {
       const nights = differenceInDays(bookingDetails.checkOut, bookingDetails.checkIn);

@@ -6,7 +6,7 @@ import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { CheckCircle, IndianRupee, Mail, Phone, User } from 'lucide-react';
+import { CheckCircle, IndianRupee, Mail, Phone, User, CreditCard, Zap } from 'lucide-react';
 
 const Payment = () => {
   const navigate = useNavigate();
@@ -24,10 +24,14 @@ const Payment = () => {
     phone: '',
     method: 'Card',
     credential: '', // Card Number or UPI ID or Wallet ID
+    useSavedPayment: false,
   });
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [fullBooking, setFullBooking] = useState(booking);
+  const [hasPaymentProfile, setHasPaymentProfile] = useState(false);
+  const [defaultPaymentMethod, setDefaultPaymentMethod] = useState(null);
+  const [paymentProfileDetails, setPaymentProfileDetails] = useState(null);
 
   const paymentAmount = useMemo(() => {
     if (amount) return amount; // Service booking amount
@@ -54,6 +58,28 @@ const Payment = () => {
       };
       fetchBooking();
     }
+
+    // Check payment profile status
+    const checkPaymentProfile = async () => {
+      try {
+        const response = await api.get('/api/payment-profile/status');
+        if (response.data.is_payment_profile_completed) {
+          setHasPaymentProfile(true);
+          setDefaultPaymentMethod(response.data.default_method);
+          setPaymentProfileDetails(response.data.profile);
+          // Auto-select saved payment method
+          setForm((prev) => ({ 
+            ...prev, 
+            method: response.data.default_method === 'bank' ? 'Bank' : 'UPI',
+            useSavedPayment: true,
+            credential: response.data.default_method === 'bank' ? 'Saved Bank Account' : 'Saved UPI ID'
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to check payment profile:', err);
+      }
+    };
+    checkPaymentProfile();
   }, [booking, bookingId, navigate]);
 
   const handleChange = (field) => (e) => {
@@ -65,7 +91,8 @@ const Payment = () => {
     if (!form.fullName.trim()) return 'Please enter full name';
     if (!form.email.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) return 'Please enter a valid email';
     if (!form.phone.trim() || form.phone.length < 10) return 'Please enter a valid phone number';
-    if (!form.credential.trim()) return `Please enter ${form.method === 'Card' ? 'Card Number' : form.method === 'UPI' ? 'UPI ID' : 'Wallet ID'}`;
+    // Skip credential validation if using saved payment
+    if (!form.useSavedPayment && !form.credential.trim()) return `Please enter ${form.method === 'Card' ? 'Card Number' : form.method === 'UPI' ? 'UPI ID' : 'Wallet ID'}`;
     return null;
   };
 
@@ -79,6 +106,30 @@ const Payment = () => {
     const [id, domain] = value.split('@');
     if (!domain) return value.length <= 2 ? value : `${value.slice(0, 2)}***`;
     return `${id.slice(0, 2)}***@${domain}`;
+  };
+
+  const handleOneClickPay = async () => {
+    setSubmitting(true);
+    try {
+      const response = await api.post('/api/payments/mock', {
+        booking_id: bookingId,
+        service_type: serviceType,
+        amount: paymentAmount,
+        payment_method: defaultPaymentMethod
+      });
+
+      if (response.data.status === 'completed') {
+        setSuccess(true);
+        setTimeout(() => {
+          navigate(`/ticket/${bookingId}`);
+        }, 1500);
+      }
+    } catch (error) {
+      console.error('Payment failed:', error);
+      alert(error.response?.data?.detail || 'Payment failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handlePayNow = async (e) => {
@@ -220,6 +271,26 @@ const Payment = () => {
 
         {/* Payment Form */}
         <Card className="p-6 space-y-5">
+          {hasPaymentProfile && (
+            <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
+              <div className="flex items-center gap-3 mb-3">
+                <Zap className="w-5 h-5 text-green-600" />
+                <h3 className="font-bold text-green-900">Verified Payment Method</h3>
+              </div>
+              <p className="text-sm text-green-800 mb-4">
+                Your KYC-verified {defaultPaymentMethod === 'upi' ? 'UPI' : 'bank account'} is ready. Pay instantly with one click.
+              </p>
+              <Button
+                onClick={handleOneClickPay}
+                disabled={submitting}
+                className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white h-12 text-lg font-semibold"
+              >
+                {submitting ? 'Processing...' : `Pay ₹${Number(paymentAmount).toLocaleString()} with Saved ${defaultPaymentMethod === 'upi' ? 'UPI' : 'Bank Account'}`}
+              </Button>
+              <div className="text-center text-sm text-gray-600 mt-3">or use different payment method below</div>
+            </div>
+          )}
+
           <form onSubmit={handlePayNow} className="space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="space-y-2">
@@ -234,29 +305,33 @@ const Payment = () => {
                 <Label className="flex items-center gap-2"><Phone className="w-4 h-4 text-[#0077b6]" /> Phone Number</Label>
                 <Input type="tel" value={form.phone} onChange={handleChange('phone')} placeholder="9876543210" />
               </div>
-              <div className="space-y-2">
-                <Label>Payment Method</Label>
-                <Select value={form.method} onValueChange={handleChange('method')}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Card">Card</SelectItem>
-                    <SelectItem value="UPI">UPI</SelectItem>
-                    <SelectItem value="Wallet">Wallet</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {(!hasPaymentProfile || !form.useSavedPayment) && (
+                <div className="space-y-2">
+                  <Label>Payment Method</Label>
+                  <Select value={form.method} onValueChange={handleChange('method')}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Card">Card</SelectItem>
+                      <SelectItem value="UPI">UPI</SelectItem>
+                      <SelectItem value="Wallet">Wallet</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
-            <div className="space-y-2">
-              <Label>{methodLabel}</Label>
-              <Input value={form.credential} onChange={handleChange('credential')} placeholder={methodPlaceholder} />
-            </div>
+            {(!hasPaymentProfile || !form.useSavedPayment) && (
+              <div className="space-y-2">
+                <Label>{methodLabel}</Label>
+                <Input value={form.credential} onChange={handleChange('credential')} placeholder={methodPlaceholder} />
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label className="flex items-center gap-2"><IndianRupee className="w-4 h-4 text-[#0077b6]" /> Amount</Label>
-              <Input readOnly value={`₹${Number(amount).toLocaleString()}`} />
+              <Input readOnly value={`₹${Number(paymentAmount).toLocaleString()}`} />
             </div>
 
             <div className="pt-2">
