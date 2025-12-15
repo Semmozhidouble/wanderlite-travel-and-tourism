@@ -118,14 +118,149 @@ try:
     uploads_dir.mkdir(parents=True, exist_ok=True)
     print(f"   ✅ Created {uploads_dir}")
     
+    # 6. Create admins table for admin panel
+    print("\n6️⃣  Creating admins table...")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            username VARCHAR(100) NOT NULL,
+            hashed_password VARCHAR(255) NOT NULL,
+            role VARCHAR(30) DEFAULT 'support',
+            is_active INTEGER DEFAULT 1,
+            last_login DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME
+        )
+    """)
+    print("   ✅ Created admins table")
+    
+    # 7. Create audit_logs table
+    print("\n7️⃣  Creating audit_logs table...")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER,
+            action VARCHAR(100) NOT NULL,
+            entity_type VARCHAR(50),
+            entity_id VARCHAR(36),
+            details TEXT,
+            ip_address VARCHAR(45),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (admin_id) REFERENCES admins(id)
+        )
+    """)
+    print("   ✅ Created audit_logs table")
+    
+    # 8. Create notifications table
+    print("\n8️⃣  Creating notifications table...")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id VARCHAR(36),
+            admin_id INTEGER,
+            title VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            notification_type VARCHAR(50) DEFAULT 'info',
+            is_read INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (admin_id) REFERENCES admins(id)
+        )
+    """)
+    print("   ✅ Created notifications table")
+    
+    # 9. Create destinations table
+    print("\n9️⃣  Creating destinations table...")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS destinations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            category VARCHAR(50),
+            country VARCHAR(100),
+            state VARCHAR(100),
+            city VARCHAR(100),
+            image_url VARCHAR(500),
+            latitude DECIMAL(10, 8),
+            longitude DECIMAL(11, 8),
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME
+        )
+    """)
+    print("   ✅ Created destinations table")
+    
+    # 10. Add status and is_blocked to users table
+    print("\n🔟 Adding user status columns...")
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER DEFAULT 0")
+        print("   ✅ Added is_blocked column")
+    except sqlite3.OperationalError as e:
+        if "duplicate column" in str(e).lower():
+            print("   ⚠️  is_blocked already exists")
+        else:
+            raise
+    
+    # 11. Create platform_settings table
+    print("\n1️⃣1️⃣ Creating platform_settings table...")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS platform_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            setting_key VARCHAR(100) UNIQUE NOT NULL,
+            setting_value TEXT,
+            updated_by INTEGER,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    print("   ✅ Created platform_settings table")
+    
+    # Insert default admin user (password: admin123)
+    print("\n1️⃣2️⃣ Creating default admin user...")
+    try:
+        # Password hash for 'admin123' using pbkdf2_sha256
+        default_admin_hash = "$pbkdf2-sha256$29000$N2aM0Xqv1Rqj9F5LCeEc4w$TpwcSAr3bMRKPGwJPaKBQGLx4Hw.5GgHKLYRDC0CYCY"
+        cursor.execute("""
+            INSERT OR IGNORE INTO admins (email, username, hashed_password, role)
+            VALUES ('admin@wanderlite.com', 'superadmin', ?, 'super_admin')
+        """, (default_admin_hash,))
+        print("   ✅ Created default admin: admin@wanderlite.com / admin123")
+    except Exception as e:
+        print(f"   ⚠️  Admin user setup: {e}")
+    
+    # Insert default platform settings
+    print("\n1️⃣3️⃣ Setting up platform defaults...")
+    settings = [
+        ('maintenance_mode', 'false'),
+        ('bookings_enabled', 'true'),
+        ('new_user_registration', 'true'),
+    ]
+    for key, value in settings:
+        try:
+            cursor.execute("""
+                INSERT OR IGNORE INTO platform_settings (setting_key, setting_value)
+                VALUES (?, ?)
+            """, (key, value))
+        except:
+            pass
+    print("   ✅ Platform settings initialized")
+    
     # Commit changes
     conn.commit()
     print("\n✅ Migration completed successfully!")
     print("\n📊 Database schema updated:")
-    print("   - users: +2 columns (is_kyc_completed, payment_profile_completed)")
+    print("   - users: +3 columns (is_kyc_completed, payment_profile_completed, is_blocked)")
     print("   - kyc_details: new table")
     print("   - payment_profiles: new table")
     print("   - transactions: new table")
+    print("   - admins: new table")
+    print("   - audit_logs: new table")
+    print("   - notifications: new table")
+    print("   - destinations: new table")
+    print("   - platform_settings: new table")
+    print("\n🔐 Default Admin Credentials:")
+    print("   Email: admin@wanderlite.com")
+    print("   Password: admin123")
     
 except Exception as e:
     conn.rollback()

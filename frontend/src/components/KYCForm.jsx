@@ -75,7 +75,11 @@ const KYCForm = ({ onSuccess }) => {
       // Don't set Content-Type header - browser will set it with boundary for multipart
       const response = await api.post('/api/kyc', payload);
 
-      if (response.data.is_kyc_completed) {
+      // KYC submitted successfully - now pending admin verification
+      if (response.data.status === 'pending') {
+        alert('KYC submitted successfully! Your verification is pending admin review. You will be notified once approved.');
+        onSuccess && onSuccess();
+      } else if (response.data.is_kyc_completed) {
         onSuccess && onSuccess();
       }
     } catch (error) {

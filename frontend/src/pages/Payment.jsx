@@ -111,18 +111,84 @@ const Payment = () => {
   const handleOneClickPay = async () => {
     setSubmitting(true);
     try {
-      const response = await api.post('/api/payments/mock', {
+      // First process the payment
+      const paymentResponse = await api.post('/api/payments/mock', {
         booking_id: bookingId,
         service_type: serviceType,
         amount: paymentAmount,
         payment_method: defaultPaymentMethod
       });
 
-      if (response.data.status === 'completed') {
-        setSuccess(true);
-        setTimeout(() => {
-          navigate(`/ticket/${bookingId}`);
-        }, 1500);
+      if (paymentResponse.data.status === 'completed') {
+        // Now generate receipt like the regular flow
+        const toIso = (val) => {
+          if (!val) return undefined;
+          const d = new Date(val);
+          return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+        };
+        const prune = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== ''));
+        
+        // Get user profile for receipt generation
+        let userProfile = { fullName: '', email: '', phone: '' };
+        try {
+          const profileRes = await api.get('/api/auth/me');
+          userProfile = {
+            fullName: profileRes.data.name || profileRes.data.username || '',
+            email: profileRes.data.email || '',
+            phone: profileRes.data.phone || ''
+          };
+        } catch (e) {
+          console.error('Could not fetch profile for receipt:', e);
+        }
+
+        const payload = prune({
+          booking_ref: bookingRef,
+          destination: serviceDetails?.destination || '',
+          start_date: toIso(serviceDetails?.checkIn || serviceDetails?.travelDate || serviceDetails?.reservationDate),
+          end_date: toIso(serviceDetails?.checkOut),
+          travelers: serviceDetails?.travelers || serviceDetails?.guests || 1,
+          full_name: userProfile.fullName,
+          email: userProfile.email,
+          phone: userProfile.phone,
+          method: defaultPaymentMethod === 'upi' ? 'UPI' : 'Bank',
+          credential: `Saved ${defaultPaymentMethod === 'upi' ? 'UPI' : 'Bank Account'}`,
+          amount: Number(paymentAmount) || 0,
+        });
+
+        try {
+          const res = await api.post('/api/payment/confirm', payload);
+          setSuccess(true);
+          navigate('/receipt', { 
+            state: { 
+              receiptUrl: res.data.receipt_url, 
+              ticketUrl: res.data.ticket_url,
+              bookingRef: res.data.booking_ref, 
+              booking: {
+                ...fullBooking,
+                booking_ref: res.data.booking_ref,
+                service_details: serviceDetails,
+                service_type: serviceType
+              },
+              payer: { 
+                fullName: userProfile.fullName,
+                email: userProfile.email,
+                phone: userProfile.phone,
+                method: defaultPaymentMethod === 'upi' ? 'UPI' : 'Bank',
+                credential: `Saved ${defaultPaymentMethod === 'upi' ? 'UPI' : 'Bank Account'}`
+              },
+              payment: res.data,
+              serviceType,
+              serviceDetails
+            } 
+          });
+        } catch (receiptError) {
+          // Payment succeeded but receipt generation failed - still navigate to ticket
+          console.error('Receipt generation failed, redirecting to ticket:', receiptError);
+          setSuccess(true);
+          setTimeout(() => {
+            navigate(`/ticket/${bookingId}`);
+          }, 1500);
+        }
       }
     } catch (error) {
       console.error('Payment failed:', error);

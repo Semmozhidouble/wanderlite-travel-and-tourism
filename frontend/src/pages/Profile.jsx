@@ -21,6 +21,7 @@ const Profile = () => {
   const [showKYC, setShowKYC] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [transactions, setTransactions] = useState([]);
+  const [kycStatus, setKycStatus] = useState(null); // null = not submitted, pending, verified, rejected
   const [profile, setProfile] = useState({
     id: '', email: '', username: '', name: '', phone: '', profile_image: '',
     favorite_travel_type: '', preferred_budget_range: '', climate_preference: '',
@@ -42,6 +43,17 @@ const Profile = () => {
         setProfile((p) => ({ ...p, ...me.data }));
         const t = await api.get('/api/trips');
         setTrips(t.data || []);
+        
+        // Fetch KYC status
+        try {
+          const kycResp = await api.get('/api/kyc/status');
+          if (kycResp.data.is_completed) {
+            setKycStatus(kycResp.data.verification_status || 'verified');
+          }
+        } catch (kycErr) {
+          // KYC not submitted yet
+          setKycStatus(null);
+        }
         
         // Fetch transactions if KYC completed
         if (me.data.is_kyc_completed) {
@@ -116,8 +128,19 @@ const Profile = () => {
 
   const handleKYCSuccess = async () => {
     setShowKYC(false);
+    // Refresh profile and KYC status
     const me = await api.get('/api/auth/me');
     setProfile((p) => ({ ...p, ...me.data }));
+    
+    // Fetch updated KYC status
+    try {
+      const kycResp = await api.get('/api/kyc/status');
+      if (kycResp.data.is_completed) {
+        setKycStatus(kycResp.data.verification_status || 'verified');
+      }
+    } catch (kycErr) {
+      setKycStatus('pending'); // Just submitted, so it's pending
+    }
   };
 
   const handlePaymentSuccess = async () => {
@@ -137,8 +160,8 @@ const Profile = () => {
   return (
     <div className="min-h-screen pt-24 pb-16 bg-gradient-to-b from-[#E1F0FD] to-white">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
-        {/* KYC Banner */}
-        {!profile.is_kyc_completed && (
+        {/* KYC Banner - Not Submitted */}
+        {kycStatus === null && (
           <Card className="p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200 shadow-lg">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
@@ -156,6 +179,49 @@ const Profile = () => {
                 >
                   <ShieldCheck className="w-4 h-4 mr-2" />
                   Start KYC Verification
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* KYC Banner - Pending Verification */}
+        {kycStatus === 'pending' && (
+          <Card className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 shadow-lg">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <ShieldCheck className="w-6 h-6 text-blue-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-blue-900 mb-2">KYC Verification Pending</h3>
+                <p className="text-sm text-blue-800">
+                  Your KYC documents have been submitted and are under review by our team. 
+                  You will be notified once your verification is approved. This usually takes 1-2 business days.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* KYC Banner - Rejected */}
+        {kycStatus === 'rejected' && (
+          <Card className="p-6 bg-gradient-to-r from-red-50 to-rose-50 border-red-200 shadow-lg">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <AlertCircle className="w-6 h-6 text-red-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-red-900 mb-2">KYC Verification Rejected</h3>
+                <p className="text-sm text-red-800 mb-4">
+                  Your KYC verification was rejected. Please resubmit your documents with clear images 
+                  and accurate information.
+                </p>
+                <Button 
+                  onClick={() => setShowKYC(true)}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  <ShieldCheck className="w-4 h-4 mr-2" />
+                  Resubmit KYC
                 </Button>
               </div>
             </div>
@@ -371,14 +437,31 @@ const Profile = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-3">
-                <ShieldCheck className={`w-6 h-6 ${profile.is_kyc_completed ? 'text-green-600' : 'text-gray-400'}`} />
+                <ShieldCheck className={`w-6 h-6 ${
+                  kycStatus === 'verified' ? 'text-green-600' : 
+                  kycStatus === 'pending' ? 'text-blue-600' : 
+                  kycStatus === 'rejected' ? 'text-red-600' : 'text-gray-400'
+                }`} />
                 <div>
                   <div className="font-semibold text-gray-900">KYC Verification</div>
-                  <div className="text-sm text-gray-600">Identity verification completed</div>
+                  <div className="text-sm text-gray-600">
+                    {kycStatus === 'verified' ? 'Identity verification completed' :
+                     kycStatus === 'pending' ? 'Under review by admin' :
+                     kycStatus === 'rejected' ? 'Verification was rejected' :
+                     'Submit your documents to verify identity'}
+                  </div>
                 </div>
               </div>
-              <div className={`px-4 py-1 rounded-full text-sm font-medium ${profile.is_kyc_completed ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
-                {profile.is_kyc_completed ? 'Verified' : 'Pending'}
+              <div className={`px-4 py-1 rounded-full text-sm font-medium ${
+                kycStatus === 'verified' ? 'bg-green-100 text-green-700' : 
+                kycStatus === 'pending' ? 'bg-blue-100 text-blue-700' : 
+                kycStatus === 'rejected' ? 'bg-red-100 text-red-700' :
+                'bg-gray-200 text-gray-600'
+              }`}>
+                {kycStatus === 'verified' ? 'Verified' : 
+                 kycStatus === 'pending' ? 'Pending Review' : 
+                 kycStatus === 'rejected' ? 'Rejected' :
+                 'Not Submitted'}
               </div>
             </div>
             

@@ -181,7 +181,7 @@ class KYCDetailsModel(Base):
     state = Column(String(100), nullable=False)
     country = Column(String(100), nullable=False)
     pincode = Column(String(20), nullable=False)
-    verification_status = Column(String(20), default="verified")  # pending / verified / rejected (demo: auto-verify)
+    verification_status = Column(String(20), default="pending")  # pending / verified / rejected
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     verified_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -324,6 +324,77 @@ class StatusCheckModel(Base):
     timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+# =============================
+# Admin Panel Database Models
+# =============================
+class AdminModel(Base):
+    __tablename__ = "admins"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    username = Column(String(100), nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(String(30), default="support")  # super_admin / support
+    is_active = Column(Integer, default=1)
+    last_login = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class AuditLogModel(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True)
+    action = Column(String(100), nullable=False)
+    entity_type = Column(String(50), nullable=True)
+    entity_id = Column(String(36), nullable=True)
+    details = Column(Text, nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class NotificationModel(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    notification_type = Column(String(50), default="info")  # info / warning / success / error
+    is_read = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class DestinationModel(Base):
+    __tablename__ = "destinations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    category = Column(String(50), nullable=True)  # beach / hill / city / heritage / adventure
+    country = Column(String(100), nullable=True)
+    state = Column(String(100), nullable=True)
+    city = Column(String(100), nullable=True)
+    image_url = Column(String(500), nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PlatformSettingModel(Base):
+    __tablename__ = "platform_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    setting_key = Column(String(100), unique=True, nullable=False)
+    setting_value = Column(Text, nullable=True)
+    updated_by = Column(Integer, ForeignKey("admins.id"), nullable=True)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
@@ -456,9 +527,6 @@ class MockPaymentRequest(BaseModel):
     amount: float
     currency: str = "INR"
     payment_method: Optional[str] = None
-    payment_method: str
-    status: str
-    created_at: datetime
 
 
 class ProfileUpdate(BaseModel):
@@ -476,6 +544,174 @@ class ProfileUpdate(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
+
+
+# =============================
+# Admin Panel Pydantic Schemas
+# =============================
+class AdminLogin(BaseModel):
+    email: str
+    password: str
+
+
+class AdminToken(BaseModel):
+    access_token: str
+    token_type: str
+    admin: dict
+
+
+class AdminPublic(BaseModel):
+    id: int
+    email: str
+    username: str
+    role: str
+    is_active: bool
+    last_login: Optional[datetime] = None
+    created_at: datetime
+
+
+class AdminCreate(BaseModel):
+    email: str
+    username: str
+    password: str
+    role: str = "support"
+
+
+class AdminPasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class DashboardStats(BaseModel):
+    total_users: int
+    total_bookings: int
+    total_revenue: float
+    pending_kyc: int
+    active_trips: int
+    recent_bookings: List[dict] = []
+    bookings_by_day: List[dict] = []
+    revenue_by_month: List[dict] = []
+    top_destinations: List[dict] = []
+
+
+class UserListItem(BaseModel):
+    id: str
+    email: str
+    username: str
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    is_kyc_completed: int
+    is_blocked: Optional[int] = 0
+    created_at: datetime
+
+
+class UserDetail(BaseModel):
+    id: str
+    email: str
+    username: str
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    is_kyc_completed: int
+    payment_profile_completed: int
+    is_blocked: Optional[int] = 0
+    created_at: datetime
+    kyc_details: Optional[dict] = None
+    bookings: List[dict] = []
+    transactions: List[dict] = []
+
+
+class KYCReviewItem(BaseModel):
+    id: int
+    user_id: str
+    user_email: str
+    user_name: str
+    full_name: str
+    id_type: str
+    verification_status: str
+    submitted_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class KYCReviewAction(BaseModel):
+    action: str  # approve / reject
+    reason: Optional[str] = None
+
+
+class BookingListItem(BaseModel):
+    id: str
+    user_id: Optional[str] = None
+    user_email: Optional[str] = None
+    service_type: str
+    booking_ref: str
+    total_price: float
+    currency: str
+    status: str
+    created_at: datetime
+
+
+class TransactionListItem(BaseModel):
+    id: int
+    user_id: str
+    user_email: Optional[str] = None
+    booking_id: Optional[str] = None
+    service_type: Optional[str] = None
+    amount: float
+    currency: str
+    payment_method: str
+    status: str
+    created_at: datetime
+
+
+class DestinationCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    image_url: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    is_active: int = 1
+
+
+class DestinationUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    image_url: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    is_active: Optional[int] = None
+
+
+class NotificationCreate(BaseModel):
+    user_id: Optional[str] = None  # None = all users
+    title: str
+    message: str
+    notification_type: str = "info"
+
+
+class PlatformSettingUpdate(BaseModel):
+    maintenance_mode: Optional[bool] = None
+    bookings_enabled: Optional[bool] = None
+    new_user_registration: Optional[bool] = None
+
+
+class AuditLogItem(BaseModel):
+    id: int
+    admin_id: Optional[int] = None
+    admin_email: Optional[str] = None
+    action: str
+    entity_type: Optional[str] = None
+    entity_id: Optional[str] = None
+    details: Optional[str] = None
+    ip_address: Optional[str] = None
+    created_at: datetime
+
 
 class Trip(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -2079,7 +2315,7 @@ async def submit_kyc(
             f.write(await selfie.read())
         selfie_path_var = f"/uploads/kyc/{current_user.id}/{selfie_file.name}"
     
-    # Create KYC record (auto-verified for demo)
+    # Create KYC record (pending admin verification)
     kyc_record = KYCDetailsModel(
         user_id=current_user.id,
         full_name=full_name,
@@ -2096,24 +2332,21 @@ async def submit_kyc(
         state=state,
         country=country,
         pincode=pincode,
-        verification_status="verified",  # Auto-verify for demo
+        verification_status="pending",  # Requires admin verification
         submitted_at=datetime.now(timezone.utc),
-        verified_at=datetime.now(timezone.utc),
+        verified_at=None,  # Will be set when admin approves
         created_at=datetime.now(timezone.utc)
     )
     db.add(kyc_record)
     
-    # Update user KYC flag
-    user_row = db.query(UserModel).filter(UserModel.id == current_user.id).first()
-    if user_row:
-        user_row.is_kyc_completed = 1
+    # Note: is_kyc_completed will be set to 1 only when admin approves
     
     db.commit()
     
     return {
-        "message": "KYC submitted successfully",
-        "status": "verified",
-        "is_kyc_completed": True
+        "message": "KYC submitted successfully. Pending admin verification.",
+        "status": "pending",
+        "is_kyc_completed": False
     }
 
 
@@ -3663,9 +3896,1057 @@ def on_startup():
                 conn.execute(text("ALTER TABLE bookings ADD COLUMN completed_at DATETIME NULL"))
             except Exception:
                 pass
+            # Add is_blocked column if missing
+            try:
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_blocked INTEGER DEFAULT 0"))
+            except Exception:
+                pass
     except Exception as e:
         logger.warning(f"Schema migration checks failed: {e}")
     logger.info("Database tables created/verified successfully")
+
+
+# =============================
+# ADMIN PANEL API ROUTES
+# =============================
+admin_router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+ADMIN_SECRET_KEY = os.environ.get('ADMIN_SECRET_KEY', 'admin-super-secret-key-2025')
+
+
+def create_admin_token(admin_id: int, email: str, role: str) -> str:
+    """Create JWT token for admin"""
+    expire = datetime.now(timezone.utc) + timedelta(hours=8)
+    payload = {
+        "sub": str(admin_id),
+        "email": email,
+        "role": role,
+        "scope": "admin",
+        "exp": expire
+    }
+    return jwt.encode(payload, ADMIN_SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Verify admin JWT token"""
+    try:
+        payload = jwt.decode(credentials.credentials, ADMIN_SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("scope") != "admin":
+            raise HTTPException(status_code=403, detail="Not an admin token")
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid admin credentials")
+
+
+async def get_current_admin(
+    token_data: dict = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+) -> AdminModel:
+    """Get current admin from token"""
+    admin = db.query(AdminModel).filter(AdminModel.id == int(token_data["sub"])).first()
+    if not admin or not admin.is_active:
+        raise HTTPException(status_code=401, detail="Admin not found or inactive")
+    return admin
+
+
+def log_admin_action(db: Session, admin_id: int, action: str, entity_type: str = None, 
+                     entity_id: str = None, details: str = None, ip_address: str = None):
+    """Log admin action for audit trail"""
+    log = AuditLogModel(
+        admin_id=admin_id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        details=details,
+        ip_address=ip_address
+    )
+    db.add(log)
+    db.commit()
+
+
+# =============================
+# Admin Authentication
+# =============================
+@admin_router.post("/login", response_model=AdminToken)
+async def admin_login(credentials: AdminLogin, db: Session = Depends(get_db)):
+    """Admin login - separate from user login"""
+    admin = db.query(AdminModel).filter(AdminModel.email == credentials.email).first()
+    
+    if not admin:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    if not pwd_context.verify(credentials.password, admin.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    if not admin.is_active:
+        raise HTTPException(status_code=403, detail="Admin account is disabled")
+    
+    # Update last login
+    admin.last_login = datetime.now(timezone.utc)
+    db.commit()
+    
+    token = create_admin_token(admin.id, admin.email, admin.role)
+    
+    return AdminToken(
+        access_token=token,
+        token_type="bearer",
+        admin={
+            "id": admin.id,
+            "email": admin.email,
+            "username": admin.username,
+            "role": admin.role
+        }
+    )
+
+
+@admin_router.get("/me", response_model=AdminPublic)
+async def get_admin_profile(admin: AdminModel = Depends(get_current_admin)):
+    """Get current admin profile"""
+    return AdminPublic(
+        id=admin.id,
+        email=admin.email,
+        username=admin.username,
+        role=admin.role,
+        is_active=bool(admin.is_active),
+        last_login=admin.last_login,
+        created_at=admin.created_at
+    )
+
+
+@admin_router.post("/change-password")
+async def admin_change_password(
+    data: AdminPasswordChange,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Change admin password"""
+    if not pwd_context.verify(data.current_password, admin.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    
+    admin.hashed_password = pwd_context.hash(data.new_password)
+    admin.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    
+    log_admin_action(db, admin.id, "password_change", "admin", str(admin.id))
+    
+    return {"message": "Password changed successfully"}
+
+
+# =============================
+# Dashboard Statistics
+# =============================
+@admin_router.get("/dashboard", response_model=DashboardStats)
+async def get_dashboard_stats(
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get dashboard statistics"""
+    # Total users
+    total_users = db.query(UserModel).count()
+    
+    # Total bookings (service + regular)
+    service_bookings = db.query(ServiceBookingModel).count()
+    regular_bookings = db.query(BookingModel).count()
+    total_bookings = service_bookings + regular_bookings
+    
+    # Total revenue (from transactions)
+    total_revenue = db.query(TransactionModel).filter(
+        TransactionModel.status == "success"
+    ).with_entities(
+        text("COALESCE(SUM(amount), 0)")
+    ).scalar() or 0
+    
+    # Pending KYC
+    pending_kyc = db.query(KYCDetailsModel).filter(
+        KYCDetailsModel.verification_status == "pending"
+    ).count()
+    
+    # Active trips
+    active_trips = db.query(TripModel).count()
+    
+    # Recent bookings
+    recent_bookings = db.query(ServiceBookingModel).order_by(
+        ServiceBookingModel.created_at.desc()
+    ).limit(5).all()
+    
+    recent_bookings_data = []
+    for b in recent_bookings:
+        user = db.query(UserModel).filter(UserModel.id == b.user_id).first()
+        recent_bookings_data.append({
+            "id": b.id,
+            "booking_ref": b.booking_ref,
+            "service_type": b.service_type,
+            "total_price": b.total_price,
+            "status": b.status,
+            "user_email": user.email if user else "N/A",
+            "created_at": b.created_at.isoformat() if b.created_at else None
+        })
+    
+    # Bookings by day (last 7 days)
+    # For SQLite compatibility
+    bookings_by_day = []
+    for i in range(7):
+        from datetime import date as dt_date
+        day = datetime.now(timezone.utc).date() - timedelta(days=6-i)
+        count = db.query(ServiceBookingModel).filter(
+            text(f"DATE(created_at) = '{day}'")
+        ).count()
+        bookings_by_day.append({
+            "date": day.isoformat(),
+            "count": count
+        })
+    
+    # Top destinations
+    top_destinations = []
+    try:
+        destinations = db.query(DestinationModel).filter(
+            DestinationModel.is_active == 1
+        ).limit(5).all()
+        for d in destinations:
+            top_destinations.append({
+                "name": d.name,
+                "category": d.category,
+                "bookings": 0  # Would need to join with bookings
+            })
+    except:
+        pass
+    
+    return DashboardStats(
+        total_users=total_users,
+        total_bookings=total_bookings,
+        total_revenue=float(total_revenue),
+        pending_kyc=pending_kyc,
+        active_trips=active_trips,
+        recent_bookings=recent_bookings_data,
+        bookings_by_day=bookings_by_day,
+        revenue_by_month=[],
+        top_destinations=top_destinations
+    )
+
+
+# =============================
+# User Management
+# =============================
+@admin_router.get("/users", response_model=List[UserListItem])
+async def list_users(
+    page: int = 1,
+    limit: int = 20,
+    search: Optional[str] = None,
+    kyc_status: Optional[str] = None,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """List all users with filtering"""
+    query = db.query(UserModel)
+    
+    if search:
+        query = query.filter(
+            (UserModel.email.contains(search)) | 
+            (UserModel.username.contains(search)) |
+            (UserModel.name.contains(search))
+        )
+    
+    if kyc_status == "completed":
+        query = query.filter(UserModel.is_kyc_completed == 1)
+    elif kyc_status == "pending":
+        query = query.filter(UserModel.is_kyc_completed == 0)
+    
+    users = query.order_by(UserModel.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+    
+    return [
+        UserListItem(
+            id=u.id,
+            email=u.email,
+            username=u.username,
+            name=u.name,
+            phone=u.phone,
+            is_kyc_completed=u.is_kyc_completed or 0,
+            is_blocked=getattr(u, 'is_blocked', 0) or 0,
+            created_at=u.created_at
+        ) for u in users
+    ]
+
+
+@admin_router.get("/users/{user_id}", response_model=UserDetail)
+async def get_user_detail(
+    user_id: str,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get detailed user information"""
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get KYC details
+    kyc = db.query(KYCDetailsModel).filter(KYCDetailsModel.user_id == user_id).first()
+    kyc_data = None
+    if kyc:
+        kyc_data = {
+            "id": kyc.id,
+            "full_name": kyc.full_name,
+            "dob": kyc.dob,
+            "gender": kyc.gender,
+            "nationality": kyc.nationality,
+            "id_type": kyc.id_type,
+            "address": f"{kyc.address_line}, {kyc.city}, {kyc.state}, {kyc.country} - {kyc.pincode}",
+            "verification_status": kyc.verification_status,
+            "submitted_at": kyc.submitted_at.isoformat() if kyc.submitted_at else None,
+            "id_proof_front": kyc.id_proof_front_path,
+            "id_proof_back": kyc.id_proof_back_path,
+            "selfie": kyc.selfie_path
+        }
+    
+    # Get bookings
+    bookings = db.query(ServiceBookingModel).filter(
+        ServiceBookingModel.user_id == user_id
+    ).order_by(ServiceBookingModel.created_at.desc()).limit(10).all()
+    
+    bookings_data = [
+        {
+            "id": b.id,
+            "booking_ref": b.booking_ref,
+            "service_type": b.service_type,
+            "total_price": b.total_price,
+            "status": b.status,
+            "created_at": b.created_at.isoformat() if b.created_at else None
+        } for b in bookings
+    ]
+    
+    # Get transactions
+    transactions = db.query(TransactionModel).filter(
+        TransactionModel.user_id == user_id
+    ).order_by(TransactionModel.created_at.desc()).limit(10).all()
+    
+    transactions_data = [
+        {
+            "id": t.id,
+            "amount": t.amount,
+            "currency": t.currency,
+            "payment_method": t.payment_method,
+            "status": t.status,
+            "created_at": t.created_at.isoformat() if t.created_at else None
+        } for t in transactions
+    ]
+    
+    return UserDetail(
+        id=user.id,
+        email=user.email,
+        username=user.username,
+        name=user.name,
+        phone=user.phone,
+        is_kyc_completed=user.is_kyc_completed or 0,
+        payment_profile_completed=user.payment_profile_completed or 0,
+        is_blocked=getattr(user, 'is_blocked', 0) or 0,
+        created_at=user.created_at,
+        kyc_details=kyc_data,
+        bookings=bookings_data,
+        transactions=transactions_data
+    )
+
+
+@admin_router.post("/users/{user_id}/block")
+async def block_user(
+    user_id: str,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Block a user"""
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Use raw SQL for SQLite compatibility
+    db.execute(text(f"UPDATE users SET is_blocked = 1 WHERE id = '{user_id}'"))
+    db.commit()
+    
+    log_admin_action(db, admin.id, "block_user", "user", user_id, f"Blocked user {user.email}")
+    
+    return {"message": f"User {user.email} has been blocked"}
+
+
+@admin_router.post("/users/{user_id}/unblock")
+async def unblock_user(
+    user_id: str,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Unblock a user"""
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    db.execute(text(f"UPDATE users SET is_blocked = 0 WHERE id = '{user_id}'"))
+    db.commit()
+    
+    log_admin_action(db, admin.id, "unblock_user", "user", user_id, f"Unblocked user {user.email}")
+    
+    return {"message": f"User {user.email} has been unblocked"}
+
+
+# =============================
+# KYC Verification Management
+# =============================
+@admin_router.get("/kyc/counts")
+async def get_kyc_counts(
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get counts of KYC requests by status"""
+    pending_count = db.query(KYCDetailsModel).filter(KYCDetailsModel.verification_status == "pending").count()
+    verified_count = db.query(KYCDetailsModel).filter(KYCDetailsModel.verification_status == "verified").count()
+    rejected_count = db.query(KYCDetailsModel).filter(KYCDetailsModel.verification_status == "rejected").count()
+    
+    return {
+        "pending": pending_count,
+        "verified": verified_count,
+        "rejected": rejected_count
+    }
+
+
+@admin_router.get("/kyc", response_model=List[KYCReviewItem])
+async def list_kyc_requests(
+    status: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """List KYC verification requests"""
+    query = db.query(KYCDetailsModel)
+    
+    if status:
+        query = query.filter(KYCDetailsModel.verification_status == status)
+    
+    kyc_list = query.order_by(KYCDetailsModel.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+    
+    result = []
+    for kyc in kyc_list:
+        user = db.query(UserModel).filter(UserModel.id == kyc.user_id).first()
+        result.append(KYCReviewItem(
+            id=kyc.id,
+            user_id=kyc.user_id,
+            user_email=user.email if user else "N/A",
+            user_name=user.username if user else "N/A",
+            full_name=kyc.full_name,
+            id_type=kyc.id_type,
+            verification_status=kyc.verification_status,
+            submitted_at=kyc.submitted_at,
+            created_at=kyc.created_at
+        ))
+    
+    return result
+
+
+@admin_router.get("/kyc/{kyc_id}")
+async def get_kyc_detail(
+    kyc_id: int,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get detailed KYC information for review"""
+    kyc = db.query(KYCDetailsModel).filter(KYCDetailsModel.id == kyc_id).first()
+    if not kyc:
+        raise HTTPException(status_code=404, detail="KYC record not found")
+    
+    user = db.query(UserModel).filter(UserModel.id == kyc.user_id).first()
+    
+    return {
+        "id": kyc.id,
+        "user_id": kyc.user_id,
+        "user_email": user.email if user else "N/A",
+        "user_name": user.username if user else "N/A",
+        "full_name": kyc.full_name,
+        "dob": kyc.dob,
+        "gender": kyc.gender,
+        "nationality": kyc.nationality,
+        "id_type": kyc.id_type,
+        "address_line": kyc.address_line,
+        "city": kyc.city,
+        "state": kyc.state,
+        "country": kyc.country,
+        "pincode": kyc.pincode,
+        "verification_status": kyc.verification_status,
+        "id_proof_front_path": kyc.id_proof_front_path,
+        "id_proof_back_path": kyc.id_proof_back_path,
+        "selfie_path": kyc.selfie_path,
+        "submitted_at": kyc.submitted_at.isoformat() if kyc.submitted_at else None,
+        "verified_at": kyc.verified_at.isoformat() if kyc.verified_at else None,
+        "created_at": kyc.created_at.isoformat() if kyc.created_at else None
+    }
+
+
+@admin_router.post("/kyc/{kyc_id}/review")
+async def review_kyc(
+    kyc_id: int,
+    action: KYCReviewAction,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Approve or reject KYC"""
+    kyc = db.query(KYCDetailsModel).filter(KYCDetailsModel.id == kyc_id).first()
+    if not kyc:
+        raise HTTPException(status_code=404, detail="KYC record not found")
+    
+    if action.action == "approve":
+        kyc.verification_status = "verified"
+        kyc.verified_at = datetime.now(timezone.utc)
+        
+        # Update user KYC status
+        user = db.query(UserModel).filter(UserModel.id == kyc.user_id).first()
+        if user:
+            user.is_kyc_completed = 1
+        
+        log_admin_action(db, admin.id, "approve_kyc", "kyc", str(kyc_id), f"Approved KYC for user {kyc.user_id}")
+        
+    elif action.action == "reject":
+        kyc.verification_status = "rejected"
+        log_admin_action(db, admin.id, "reject_kyc", "kyc", str(kyc_id), f"Rejected KYC for user {kyc.user_id}: {action.reason}")
+    
+    kyc.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    
+    return {"message": f"KYC {action.action}d successfully"}
+
+
+# =============================
+# Booking Management
+# =============================
+@admin_router.get("/bookings", response_model=List[BookingListItem])
+async def list_bookings(
+    service_type: Optional[str] = None,
+    status: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """List all bookings"""
+    query = db.query(ServiceBookingModel)
+    
+    if service_type:
+        query = query.filter(ServiceBookingModel.service_type == service_type)
+    if status:
+        query = query.filter(ServiceBookingModel.status == status)
+    
+    bookings = query.order_by(ServiceBookingModel.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+    
+    result = []
+    for b in bookings:
+        user = db.query(UserModel).filter(UserModel.id == b.user_id).first() if b.user_id else None
+        result.append(BookingListItem(
+            id=b.id,
+            user_id=b.user_id,
+            user_email=user.email if user else "Guest",
+            service_type=b.service_type,
+            booking_ref=b.booking_ref,
+            total_price=b.total_price,
+            currency=b.currency,
+            status=b.status,
+            created_at=b.created_at
+        ))
+    
+    return result
+
+
+@admin_router.get("/bookings/{booking_id}")
+async def get_booking_detail(
+    booking_id: str,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get detailed booking information"""
+    booking = db.query(ServiceBookingModel).filter(ServiceBookingModel.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    user = db.query(UserModel).filter(UserModel.id == booking.user_id).first() if booking.user_id else None
+    
+    # Parse service JSON
+    service_details = {}
+    try:
+        service_details = json.loads(booking.service_json)
+    except:
+        pass
+    
+    # Get related receipt
+    receipt = db.query(PaymentReceiptModel).filter(
+        PaymentReceiptModel.booking_ref == booking.booking_ref
+    ).first()
+    
+    return {
+        "id": booking.id,
+        "user_id": booking.user_id,
+        "user_email": user.email if user else "Guest",
+        "service_type": booking.service_type,
+        "booking_ref": booking.booking_ref,
+        "total_price": booking.total_price,
+        "currency": booking.currency,
+        "status": booking.status,
+        "service_details": service_details,
+        "receipt_url": receipt.receipt_url if receipt else None,
+        "created_at": booking.created_at.isoformat() if booking.created_at else None
+    }
+
+
+@admin_router.post("/bookings/{booking_id}/status")
+async def update_booking_status(
+    booking_id: str,
+    status: str,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Update booking status"""
+    booking = db.query(ServiceBookingModel).filter(ServiceBookingModel.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    old_status = booking.status
+    booking.status = status
+    db.commit()
+    
+    log_admin_action(db, admin.id, "update_booking_status", "booking", booking_id, 
+                     f"Changed status from {old_status} to {status}")
+    
+    return {"message": f"Booking status updated to {status}"}
+
+
+@admin_router.post("/bookings/{booking_id}/cancel")
+async def cancel_booking(
+    booking_id: str,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Cancel a booking"""
+    booking = db.query(ServiceBookingModel).filter(ServiceBookingModel.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    booking.status = "Cancelled"
+    db.commit()
+    
+    log_admin_action(db, admin.id, "cancel_booking", "booking", booking_id, 
+                     f"Cancelled booking {booking.booking_ref}")
+    
+    return {"message": "Booking cancelled successfully"}
+
+
+# =============================
+# Transaction Management
+# =============================
+@admin_router.get("/transactions", response_model=List[TransactionListItem])
+async def list_transactions(
+    status: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """List all transactions"""
+    query = db.query(TransactionModel)
+    
+    if status:
+        query = query.filter(TransactionModel.status == status)
+    if payment_method:
+        query = query.filter(TransactionModel.payment_method.contains(payment_method))
+    
+    transactions = query.order_by(TransactionModel.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+    
+    result = []
+    for t in transactions:
+        user = db.query(UserModel).filter(UserModel.id == t.user_id).first()
+        result.append(TransactionListItem(
+            id=t.id,
+            user_id=t.user_id,
+            user_email=user.email if user else "N/A",
+            booking_id=t.booking_id,
+            service_type=t.service_type,
+            amount=t.amount,
+            currency=t.currency,
+            payment_method=t.payment_method,
+            status=t.status,
+            created_at=t.created_at
+        ))
+    
+    return result
+
+
+# =============================
+# Destination Management (CRUD)
+# =============================
+@admin_router.get("/destinations")
+async def list_destinations(
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """List all destinations"""
+    destinations = db.query(DestinationModel).order_by(DestinationModel.created_at.desc()).all()
+    return [
+        {
+            "id": d.id,
+            "name": d.name,
+            "description": d.description,
+            "category": d.category,
+            "country": d.country,
+            "state": d.state,
+            "city": d.city,
+            "image_url": d.image_url,
+            "is_active": d.is_active,
+            "created_at": d.created_at.isoformat() if d.created_at else None
+        } for d in destinations
+    ]
+
+
+@admin_router.post("/destinations")
+async def create_destination(
+    data: DestinationCreate,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Create a new destination"""
+    destination = DestinationModel(
+        name=data.name,
+        description=data.description,
+        category=data.category,
+        country=data.country,
+        state=data.state,
+        city=data.city,
+        image_url=data.image_url,
+        latitude=data.latitude,
+        longitude=data.longitude,
+        is_active=data.is_active
+    )
+    db.add(destination)
+    db.commit()
+    db.refresh(destination)
+    
+    log_admin_action(db, admin.id, "create_destination", "destination", str(destination.id), 
+                     f"Created destination: {data.name}")
+    
+    return {"message": "Destination created", "id": destination.id}
+
+
+@admin_router.put("/destinations/{dest_id}")
+async def update_destination(
+    dest_id: int,
+    data: DestinationUpdate,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Update a destination"""
+    destination = db.query(DestinationModel).filter(DestinationModel.id == dest_id).first()
+    if not destination:
+        raise HTTPException(status_code=404, detail="Destination not found")
+    
+    if data.name is not None:
+        destination.name = data.name
+    if data.description is not None:
+        destination.description = data.description
+    if data.category is not None:
+        destination.category = data.category
+    if data.country is not None:
+        destination.country = data.country
+    if data.state is not None:
+        destination.state = data.state
+    if data.city is not None:
+        destination.city = data.city
+    if data.image_url is not None:
+        destination.image_url = data.image_url
+    if data.latitude is not None:
+        destination.latitude = data.latitude
+    if data.longitude is not None:
+        destination.longitude = data.longitude
+    if data.is_active is not None:
+        destination.is_active = data.is_active
+    
+    destination.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    
+    log_admin_action(db, admin.id, "update_destination", "destination", str(dest_id), 
+                     f"Updated destination: {destination.name}")
+    
+    return {"message": "Destination updated"}
+
+
+@admin_router.delete("/destinations/{dest_id}")
+async def delete_destination(
+    dest_id: int,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete a destination"""
+    destination = db.query(DestinationModel).filter(DestinationModel.id == dest_id).first()
+    if not destination:
+        raise HTTPException(status_code=404, detail="Destination not found")
+    
+    name = destination.name
+    db.delete(destination)
+    db.commit()
+    
+    log_admin_action(db, admin.id, "delete_destination", "destination", str(dest_id), 
+                     f"Deleted destination: {name}")
+    
+    return {"message": "Destination deleted"}
+
+
+# =============================
+# Notifications Management
+# =============================
+@admin_router.post("/notifications")
+async def send_notification(
+    data: NotificationCreate,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Send notification to users"""
+    if data.user_id:
+        # Send to specific user
+        notification = NotificationModel(
+            user_id=data.user_id,
+            admin_id=admin.id,
+            title=data.title,
+            message=data.message,
+            notification_type=data.notification_type
+        )
+        db.add(notification)
+        count = 1
+    else:
+        # Send to all users
+        users = db.query(UserModel).all()
+        count = 0
+        for user in users:
+            notification = NotificationModel(
+                user_id=user.id,
+                admin_id=admin.id,
+                title=data.title,
+                message=data.message,
+                notification_type=data.notification_type
+            )
+            db.add(notification)
+            count += 1
+    
+    db.commit()
+    
+    log_admin_action(db, admin.id, "send_notification", "notification", None, 
+                     f"Sent notification to {count} user(s): {data.title}")
+    
+    return {"message": f"Notification sent to {count} user(s)"}
+
+
+@admin_router.get("/notifications")
+async def list_notifications(
+    page: int = 1,
+    limit: int = 50,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """List sent notifications"""
+    notifications = db.query(NotificationModel).order_by(
+        NotificationModel.created_at.desc()
+    ).offset((page-1)*limit).limit(limit).all()
+    
+    return [
+        {
+            "id": n.id,
+            "user_id": n.user_id,
+            "title": n.title,
+            "message": n.message,
+            "notification_type": n.notification_type,
+            "is_read": n.is_read,
+            "created_at": n.created_at.isoformat() if n.created_at else None
+        } for n in notifications
+    ]
+
+
+# =============================
+# Reports & Logs
+# =============================
+@admin_router.get("/reports/bookings")
+async def booking_report(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get booking report"""
+    query = db.query(ServiceBookingModel)
+    
+    if start_date:
+        query = query.filter(ServiceBookingModel.created_at >= start_date)
+    if end_date:
+        query = query.filter(ServiceBookingModel.created_at <= end_date)
+    
+    total = query.count()
+    by_type = {}
+    by_status = {}
+    total_revenue = 0
+    
+    bookings = query.all()
+    for b in bookings:
+        by_type[b.service_type] = by_type.get(b.service_type, 0) + 1
+        by_status[b.status] = by_status.get(b.status, 0) + 1
+        if b.status in ["Confirmed", "Paid", "Completed"]:
+            total_revenue += b.total_price
+    
+    return {
+        "total_bookings": total,
+        "by_service_type": by_type,
+        "by_status": by_status,
+        "total_revenue": total_revenue
+    }
+
+
+@admin_router.get("/reports/users")
+async def user_report(
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get user growth report"""
+    total_users = db.query(UserModel).count()
+    kyc_completed = db.query(UserModel).filter(UserModel.is_kyc_completed == 1).count()
+    
+    # Users by month (last 6 months)
+    users_by_month = []
+    for i in range(6):
+        month_start = datetime.now(timezone.utc).replace(day=1) - timedelta(days=30*i)
+        month_end = month_start + timedelta(days=30)
+        count = db.query(UserModel).filter(
+            UserModel.created_at >= month_start,
+            UserModel.created_at < month_end
+        ).count()
+        users_by_month.append({
+            "month": month_start.strftime("%Y-%m"),
+            "count": count
+        })
+    
+    return {
+        "total_users": total_users,
+        "kyc_completed": kyc_completed,
+        "kyc_pending": total_users - kyc_completed,
+        "users_by_month": list(reversed(users_by_month))
+    }
+
+
+@admin_router.get("/audit-logs", response_model=List[AuditLogItem])
+async def get_audit_logs(
+    page: int = 1,
+    limit: int = 50,
+    action: Optional[str] = None,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get admin audit logs"""
+    query = db.query(AuditLogModel)
+    
+    if action:
+        query = query.filter(AuditLogModel.action.contains(action))
+    
+    logs = query.order_by(AuditLogModel.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+    
+    result = []
+    for log in logs:
+        admin_user = db.query(AdminModel).filter(AdminModel.id == log.admin_id).first() if log.admin_id else None
+        result.append(AuditLogItem(
+            id=log.id,
+            admin_id=log.admin_id,
+            admin_email=admin_user.email if admin_user else "System",
+            action=log.action,
+            entity_type=log.entity_type,
+            entity_id=log.entity_id,
+            details=log.details,
+            ip_address=log.ip_address,
+            created_at=log.created_at
+        ))
+    
+    return result
+
+
+# =============================
+# Platform Settings
+# =============================
+@admin_router.get("/settings")
+async def get_platform_settings(
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get platform settings"""
+    settings = db.query(PlatformSettingModel).all()
+    return {s.setting_key: s.setting_value for s in settings}
+
+
+@admin_router.put("/settings")
+async def update_platform_settings(
+    data: PlatformSettingUpdate,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Update platform settings"""
+    if data.maintenance_mode is not None:
+        setting = db.query(PlatformSettingModel).filter(
+            PlatformSettingModel.setting_key == "maintenance_mode"
+        ).first()
+        if setting:
+            setting.setting_value = str(data.maintenance_mode).lower()
+            setting.updated_by = admin.id
+            setting.updated_at = datetime.now(timezone.utc)
+    
+    if data.bookings_enabled is not None:
+        setting = db.query(PlatformSettingModel).filter(
+            PlatformSettingModel.setting_key == "bookings_enabled"
+        ).first()
+        if setting:
+            setting.setting_value = str(data.bookings_enabled).lower()
+            setting.updated_by = admin.id
+            setting.updated_at = datetime.now(timezone.utc)
+    
+    if data.new_user_registration is not None:
+        setting = db.query(PlatformSettingModel).filter(
+            PlatformSettingModel.setting_key == "new_user_registration"
+        ).first()
+        if setting:
+            setting.setting_value = str(data.new_user_registration).lower()
+            setting.updated_by = admin.id
+            setting.updated_at = datetime.now(timezone.utc)
+    
+    db.commit()
+    
+    log_admin_action(db, admin.id, "update_settings", "settings", None, "Updated platform settings")
+    
+    return {"message": "Settings updated"}
+
+
+# =============================
+# Receipts & Tickets
+# =============================
+@admin_router.get("/receipts")
+async def list_receipts(
+    page: int = 1,
+    limit: int = 20,
+    admin: AdminModel = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """List all payment receipts"""
+    receipts = db.query(PaymentReceiptModel).order_by(
+        PaymentReceiptModel.created_at.desc()
+    ).offset((page-1)*limit).limit(limit).all()
+    
+    return [
+        {
+            "id": r.id,
+            "booking_ref": r.booking_ref,
+            "full_name": r.full_name,
+            "email": r.email,
+            "amount": r.amount,
+            "payment_method": r.payment_method,
+            "receipt_url": r.receipt_url,
+            "created_at": r.created_at.isoformat() if r.created_at else None
+        } for r in receipts
+    ]
+
+
+# Register admin router
+app.include_router(admin_router)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 import React from "react";
 import "./App.css";
 import 'leaflet/dist/leaflet.css'; // Import Leaflet CSS for maps
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AIProvider } from "./contexts/AIContext";
 import { ToastProvider } from "./components/Toast";
@@ -35,6 +35,21 @@ import FlightDetail from "./pages/FlightDetail";
 import HotelDetail from "./pages/HotelDetail";
 import RestaurantDetail from "./pages/RestaurantDetail";
 
+// Admin imports
+import AdminLogin from "./pages/AdminLogin";
+import AdminLayout from "./components/admin/AdminLayout";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import UserManagement from "./pages/admin/UserManagement";
+import KYCVerification from "./pages/admin/KYCVerification";
+import Bookings from "./pages/admin/Bookings";
+import Transactions from "./pages/admin/Transactions";
+import Destinations from "./pages/admin/Destinations";
+import Notifications from "./pages/admin/Notifications";
+import Receipts from "./pages/admin/Receipts";
+import Reports from "./pages/admin/Reports";
+import Settings from "./pages/admin/Settings";
+import AdminProtectedRoute from "./components/admin/AdminProtectedRoute";
+
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -65,6 +80,64 @@ const PublicRoute = ({ children }) => {
   return isAuthenticated ? <Navigate to="/profile" /> : children;
 };
 
+// AppContent component to conditionally render Navbar and Footer
+const AppContent = () => {
+  const location = useLocation();
+  const isAdminRoute = location.pathname.startsWith('/admin');
+
+  return (
+    <>
+      {!isAdminRoute && <Navbar />}
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/explore" element={<Explore />} />
+        <Route path="/destination/:destinationName" element={<DestinationDetails />} />
+        <Route path="/destination/:destinationName/flights/:flightId" element={<FlightDetail />} />
+        <Route path="/destination/:destinationName/hotels/:hotelId" element={<HotelDetail />} />
+        <Route path="/destination/:destinationName/restaurants/:restaurantId" element={<RestaurantDetail />} />
+        <Route path="/planner" element={<TripPlanner />} />
+        <Route path="/checklist" element={<Checklist />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/flights" element={<Flights />} />
+        <Route path="/hotels" element={<Hotels />} />
+        <Route path="/restaurants" element={<Restaurants />} />
+        <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+        <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/gallery" element={<ProtectedRoute><Gallery /></ProtectedRoute>} />
+        <Route path="/payment" element={<Payment />} />
+        <Route path="/receipt" element={<Receipt />} />
+        <Route path="/ticket" element={<Ticket />} />
+        <Route path="/ticket/verify" element={<TicketVerify />} />
+        <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
+        <Route path="/my-receipts" element={<ProtectedRoute><MyReceipts /></ProtectedRoute>} />
+        <Route path="/trip-history" element={<ProtectedRoute><TripHistory /></ProtectedRoute>} />
+        <Route path="/assistant" element={<Assistant />} />
+
+        {/* Admin Routes */}
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+          <Route index element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="dashboard" element={<AdminDashboard />} />
+          <Route path="users" element={<UserManagement />} />
+          <Route path="kyc" element={<KYCVerification />} />
+          <Route path="bookings" element={<Bookings />} />
+          <Route path="transactions" element={<Transactions />} />
+          <Route path="receipts" element={<Receipts />} />
+          <Route path="destinations" element={<Destinations />} />
+          <Route path="notifications" element={<Notifications />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
+      </Routes>
+      {!isAdminRoute && <Footer />}
+      {!isAdminRoute && <ChatBot />}
+      <Toaster />
+    </>
+  );
+};
+
 function App() {
   return (
     <AuthProvider>
@@ -72,37 +145,7 @@ function App() {
         <ToastProvider>
           <div className="App">
             <BrowserRouter>
-              <Navbar />
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/explore" element={<Explore />} />
-                <Route path="/destination/:destinationName" element={<DestinationDetails />} />
-                <Route path="/destination/:destinationName/flights/:flightId" element={<FlightDetail />} />
-                <Route path="/destination/:destinationName/hotels/:hotelId" element={<HotelDetail />} />
-                <Route path="/destination/:destinationName/restaurants/:restaurantId" element={<RestaurantDetail />} />
-                <Route path="/planner" element={<TripPlanner />} />
-                <Route path="/checklist" element={<Checklist />} />
-                <Route path="/contact" element={<Contact />} />
-                <Route path="/flights" element={<Flights />} />
-                <Route path="/hotels" element={<Hotels />} />
-                <Route path="/restaurants" element={<Restaurants />} />
-                <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-                <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
-                <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-                <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                <Route path="/gallery" element={<ProtectedRoute><Gallery /></ProtectedRoute>} />
-                <Route path="/payment" element={<Payment />} />
-                <Route path="/receipt" element={<Receipt />} />
-                <Route path="/ticket" element={<Ticket />} />
-                <Route path="/ticket/verify" element={<TicketVerify />} />
-                <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
-                <Route path="/my-receipts" element={<ProtectedRoute><MyReceipts /></ProtectedRoute>} />
-                <Route path="/trip-history" element={<ProtectedRoute><TripHistory /></ProtectedRoute>} />
-                <Route path="/assistant" element={<Assistant />} />
-              </Routes>
-              <Footer />
-              <ChatBot />
-              <Toaster />
+              <AppContent />
             </BrowserRouter>
           </div>
         </ToastProvider>
