@@ -35,10 +35,12 @@ import BusBooking from "./pages/BusBooking";
 import BusTicket from "./pages/BusTicket";
 import Assistant from "./pages/Assistant";
 import Hotels from "./pages/Hotels";
+import HotelDetail from "./pages/HotelDetail";
+import HotelBooking from "./pages/HotelBooking";
+import HotelTicket from "./pages/HotelTicket";
 import Restaurants from "./pages/Restaurants";
 import DestinationDetails from "./pages/DestinationDetails";
 import FlightDetail from "./pages/FlightDetail";
-import HotelDetail from "./pages/HotelDetail";
 import RestaurantDetail from "./pages/RestaurantDetail";
 
 // Admin imports
@@ -112,6 +114,9 @@ const AppContent = () => {
         <Route path="/bus-booking" element={<ProtectedRoute><BusBooking /></ProtectedRoute>} />
         <Route path="/bus-ticket" element={<ProtectedRoute><BusTicket /></ProtectedRoute>} />
         <Route path="/hotels" element={<Hotels />} />
+        <Route path="/hotel/:id" element={<HotelDetail />} />
+        <Route path="/hotel-booking" element={<ProtectedRoute><HotelBooking /></ProtectedRoute>} />
+        <Route path="/hotel-ticket" element={<ProtectedRoute><HotelTicket /></ProtectedRoute>} />
         <Route path="/restaurants" element={<Restaurants />} />
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />

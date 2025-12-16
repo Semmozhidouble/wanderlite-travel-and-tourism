@@ -41,6 +41,7 @@ from sqlalchemy import (
     Text,
     ForeignKey,
     text,
+    func,
 )
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from sqlalchemy.engine import url as sa_url
@@ -822,6 +823,162 @@ class FlightTrackingModel(Base):
     progress_percentage = Column(Float, default=0)
     last_updated = Column(DateTime, default=datetime.utcnow)
     eta_mins = Column(Integer, nullable=True)
+
+
+# =============================
+# Hotel Booking Models (Advanced Booking.com/MakeMyTrip-style)
+# =============================
+
+class HotelModel(Base):
+    __tablename__ = "hotels"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(300), nullable=False)
+    slug = Column(String(300), unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+    star_category = Column(Integer, nullable=False)  # 1, 2, 3, 4, 5
+    hotel_type = Column(String(100), nullable=True)  # Hotel, Resort, Boutique, etc.
+    city = Column(String(100), nullable=False)
+    state = Column(String(100), nullable=False)
+    country = Column(String(100), default="India")
+    address = Column(Text, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    landmark = Column(String(200), nullable=True)
+    distance_from_center = Column(Float, nullable=True)  # in km
+    rating = Column(Float, default=0)  # User rating 0-5
+    reviews_count = Column(Integer, default=0)
+    price_per_night = Column(Float, nullable=False)  # Starting price
+    original_price = Column(Float, nullable=True)  # Before discount
+    currency = Column(String(10), default="INR")
+    amenities = Column(Text, nullable=True)  # JSON string of amenities
+    images = Column(Text, nullable=True)  # JSON string of image URLs
+    policies = Column(Text, nullable=True)  # JSON string of policies
+    check_in_time = Column(String(10), default="14:00")
+    check_out_time = Column(String(10), default="11:00")
+    contact_phone = Column(String(20), nullable=True)
+    contact_email = Column(String(200), nullable=True)
+    gst_number = Column(String(50), nullable=True)
+    is_featured = Column(Integer, default=0)
+    free_cancellation = Column(Integer, default=1)
+    breakfast_included = Column(Integer, default=0)
+    total_rooms = Column(Integer, default=50)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class HotelRoomModel(Base):
+    __tablename__ = "hotel_rooms"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    hotel_id = Column(Integer, ForeignKey("hotels.id"), nullable=False)
+    room_type = Column(String(100), nullable=False)  # Standard, Deluxe, Suite, etc.
+    room_name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    max_guests = Column(Integer, default=2)
+    max_adults = Column(Integer, default=2)
+    max_children = Column(Integer, default=1)
+    bed_type = Column(String(100), nullable=False)  # King, Queen, Twin, etc.
+    room_size_sqft = Column(Integer, nullable=True)
+    view_type = Column(String(100), nullable=True)  # City View, Garden View, Pool View
+    price_per_night = Column(Float, nullable=False)
+    original_price = Column(Float, nullable=True)
+    discount_percent = Column(Float, default=0)
+    amenities = Column(Text, nullable=True)  # JSON string
+    images = Column(Text, nullable=True)  # JSON string
+    inclusions = Column(Text, nullable=True)  # JSON string (breakfast, wifi, etc.)
+    cancellation_policy = Column(Text, nullable=True)
+    total_rooms = Column(Integer, default=10)
+    available_rooms = Column(Integer, default=10)
+    is_refundable = Column(Integer, default=1)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class HotelRoomAvailabilityModel(Base):
+    __tablename__ = "hotel_room_availability"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    room_id = Column(Integer, ForeignKey("hotel_rooms.id"), nullable=False)
+    date = Column(String(20), nullable=False)  # YYYY-MM-DD
+    available_rooms = Column(Integer, nullable=False)
+    price = Column(Float, nullable=False)
+    is_blocked = Column(Integer, default=0)
+
+
+class HotelBookingModel(Base):
+    __tablename__ = "hotel_bookings"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    booking_id = Column(String(36), unique=True, nullable=False)  # UUID
+    booking_reference = Column(String(20), unique=True, nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    hotel_id = Column(Integer, ForeignKey("hotels.id"), nullable=False)
+    room_id = Column(Integer, ForeignKey("hotel_rooms.id"), nullable=False)
+    check_in_date = Column(String(20), nullable=False)  # YYYY-MM-DD
+    check_out_date = Column(String(20), nullable=False)
+    check_in_time = Column(String(10), nullable=True)
+    check_out_time = Column(String(10), nullable=True)
+    nights = Column(Integer, nullable=False)
+    rooms_booked = Column(Integer, default=1)
+    adults = Column(Integer, default=2)
+    children = Column(Integer, default=0)
+    guest_name = Column(String(200), nullable=False)
+    guest_email = Column(String(200), nullable=False)
+    guest_phone = Column(String(20), nullable=False)
+    guest_nationality = Column(String(100), default="Indian")
+    special_requests = Column(Text, nullable=True)
+    base_price = Column(Float, nullable=False)  # Room rate * nights
+    taxes = Column(Float, nullable=False)
+    service_charge = Column(Float, default=0)
+    discount_amount = Column(Float, default=0)
+    total_amount = Column(Float, nullable=False)
+    currency = Column(String(10), default="INR")
+    payment_status = Column(String(30), default="pending")  # pending, paid, refunded, failed
+    payment_method = Column(String(50), nullable=True)
+    transaction_id = Column(String(100), nullable=True)
+    payment_date = Column(DateTime, nullable=True)
+    booking_status = Column(String(30), default="confirmed")  # confirmed, cancelled, completed, no_show
+    cancellation_reason = Column(Text, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    refund_amount = Column(Float, nullable=True)
+    refund_status = Column(String(30), nullable=True)  # pending, processed, failed
+    qr_code = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class HotelReviewModel(Base):
+    __tablename__ = "hotel_reviews"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    hotel_id = Column(Integer, ForeignKey("hotels.id"), nullable=False)
+    booking_id = Column(Integer, ForeignKey("hotel_bookings.id"), nullable=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    rating = Column(Float, nullable=False)  # 1-5
+    cleanliness_rating = Column(Float, nullable=True)
+    service_rating = Column(Float, nullable=True)
+    location_rating = Column(Float, nullable=True)
+    value_rating = Column(Float, nullable=True)
+    title = Column(String(200), nullable=True)
+    review_text = Column(Text, nullable=True)
+    pros = Column(Text, nullable=True)
+    cons = Column(Text, nullable=True)
+    travel_type = Column(String(50), nullable=True)  # Business, Leisure, Family, Couple
+    is_verified = Column(Integer, default=0)
+    helpful_count = Column(Integer, default=0)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class HotelWishlistModel(Base):
+    __tablename__ = "hotel_wishlists"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    hotel_id = Column(Integer, ForeignKey("hotels.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -1621,6 +1778,223 @@ class HotelSearchQuery(BaseModel):
     guests: int = 1
     min_rating: Optional[float] = None
     max_price: Optional[float] = None
+
+
+# =============================
+# Hotel Pydantic Schemas (Advanced)
+# =============================
+
+class HotelSearchRequest(BaseModel):
+    city: str
+    check_in_date: Optional[str] = None  # YYYY-MM-DD
+    check_out_date: Optional[str] = None  # YYYY-MM-DD
+    adults: int = 2
+    children: int = 0
+    rooms: int = 1
+    star_rating: Optional[List[int]] = None  # [3, 4, 5]
+    min_price: Optional[float] = None
+    max_price: Optional[float] = None
+    amenities: Optional[List[str]] = None
+    hotel_type: Optional[str] = None
+    free_cancellation: Optional[bool] = None
+    breakfast_included: Optional[bool] = None
+    sort_by: str = "popularity"  # popularity, price_low, price_high, rating, distance
+    page: int = 1
+    limit: int = 20
+
+
+class HotelCityResponse(BaseModel):
+    id: int
+    name: str
+    state: str
+    country: str
+    hotel_count: int
+
+
+class HotelAmenity(BaseModel):
+    name: str
+    icon: str
+    category: str
+
+
+class HotelImage(BaseModel):
+    url: str
+    caption: Optional[str] = None
+    is_primary: bool = False
+
+
+class HotelPolicy(BaseModel):
+    title: str
+    description: str
+    category: str  # check_in, cancellation, children, pets, etc.
+
+
+class HotelListItem(BaseModel):
+    id: int
+    name: str
+    slug: str
+    star_category: int
+    hotel_type: Optional[str]
+    city: str
+    state: str
+    address: Optional[str]
+    latitude: Optional[float]
+    longitude: Optional[float]
+    rating: float
+    reviews_count: int
+    price_per_night: float
+    original_price: Optional[float]
+    currency: str
+    primary_image: Optional[str]
+    amenities: List[str]
+    free_cancellation: bool
+    breakfast_included: bool
+    distance_from_center: Optional[float]
+    landmark: Optional[str]
+
+
+class HotelDetailResponse(BaseModel):
+    id: int
+    name: str
+    slug: str
+    description: Optional[str]
+    star_category: int
+    hotel_type: Optional[str]
+    city: str
+    state: str
+    country: str
+    address: Optional[str]
+    latitude: Optional[float]
+    longitude: Optional[float]
+    landmark: Optional[str]
+    distance_from_center: Optional[float]
+    rating: float
+    reviews_count: int
+    price_per_night: float
+    original_price: Optional[float]
+    currency: str
+    amenities: List[dict]
+    images: List[dict]
+    policies: List[dict]
+    check_in_time: str
+    check_out_time: str
+    contact_phone: Optional[str]
+    contact_email: Optional[str]
+    gst_number: Optional[str]
+    free_cancellation: bool
+    breakfast_included: bool
+    total_rooms: int
+
+
+class HotelRoomResponse(BaseModel):
+    id: int
+    hotel_id: int
+    room_type: str
+    room_name: str
+    description: Optional[str]
+    max_guests: int
+    max_adults: int
+    max_children: int
+    bed_type: str
+    room_size_sqft: Optional[int]
+    view_type: Optional[str]
+    price_per_night: float
+    original_price: Optional[float]
+    discount_percent: float
+    amenities: List[str]
+    images: List[str]
+    inclusions: List[str]
+    cancellation_policy: Optional[str]
+    available_rooms: int
+    is_refundable: bool
+
+
+class HotelBookingCreate(BaseModel):
+    hotel_id: int
+    room_id: int
+    check_in_date: str
+    check_out_date: str
+    rooms_booked: int = 1
+    adults: int = 2
+    children: int = 0
+    guest_name: str
+    guest_email: str
+    guest_phone: str
+    guest_nationality: str = "Indian"
+    special_requests: Optional[str] = None
+
+
+class HotelBookingResponse(BaseModel):
+    booking_id: str
+    booking_reference: str
+    hotel_name: str
+    hotel_address: Optional[str]
+    hotel_phone: Optional[str]
+    hotel_email: Optional[str]
+    hotel_star: int
+    hotel_gst: Optional[str]
+    room_type: str
+    room_name: str
+    bed_type: str
+    check_in_date: str
+    check_out_date: str
+    check_in_time: str
+    check_out_time: str
+    nights: int
+    rooms_booked: int
+    adults: int
+    children: int
+    guest_name: str
+    guest_email: str
+    guest_phone: str
+    guest_nationality: str
+    special_requests: Optional[str]
+    base_price: float
+    taxes: float
+    service_charge: float
+    discount_amount: float
+    total_amount: float
+    currency: str
+    payment_status: str
+    payment_method: Optional[str]
+    transaction_id: Optional[str]
+    booking_status: str
+    qr_code: Optional[str]
+    created_at: datetime
+
+
+class HotelReviewCreate(BaseModel):
+    hotel_id: int
+    booking_id: Optional[int] = None
+    rating: float
+    cleanliness_rating: Optional[float] = None
+    service_rating: Optional[float] = None
+    location_rating: Optional[float] = None
+    value_rating: Optional[float] = None
+    title: Optional[str] = None
+    review_text: Optional[str] = None
+    pros: Optional[str] = None
+    cons: Optional[str] = None
+    travel_type: Optional[str] = None
+
+
+class HotelReviewResponse(BaseModel):
+    id: int
+    hotel_id: int
+    user_name: str
+    rating: float
+    cleanliness_rating: Optional[float]
+    service_rating: Optional[float]
+    location_rating: Optional[float]
+    value_rating: Optional[float]
+    title: Optional[str]
+    review_text: Optional[str]
+    pros: Optional[str]
+    cons: Optional[str]
+    travel_type: Optional[str]
+    is_verified: bool
+    helpful_count: int
+    created_at: datetime
 
 
 class RestaurantSearchQuery(BaseModel):
@@ -7543,6 +7917,1200 @@ async def seed_flight_data(db: Session = Depends(get_db)):
 
 # Register flight router
 app.include_router(flight_router)
+
+
+# =============================
+# Hotel Booking Router (Advanced Booking.com/MakeMyTrip-style)
+# =============================
+hotel_router = APIRouter(prefix="/api/hotel", tags=["Hotels"])
+
+
+def generate_hotel_booking_ref():
+    """Generate unique hotel booking reference"""
+    chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "HTL" + ''.join(random.choices(chars, k=9))
+
+
+def parse_json_field(field_value, default=None):
+    """Safely parse JSON field"""
+    if field_value is None:
+        return default if default is not None else []
+    if isinstance(field_value, (list, dict)):
+        return field_value
+    try:
+        return json.loads(field_value)
+    except:
+        return default if default is not None else []
+
+
+@hotel_router.get("/cities")
+async def get_hotel_cities(
+    search: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Get list of cities with hotels"""
+    query = db.query(
+        HotelModel.city,
+        HotelModel.state,
+        HotelModel.country,
+        func.count(HotelModel.id).label("hotel_count")
+    ).filter(HotelModel.is_active == 1).group_by(
+        HotelModel.city, HotelModel.state, HotelModel.country
+    )
+    
+    if search:
+        query = query.filter(HotelModel.city.ilike(f"%{search}%"))
+    
+    cities = query.order_by(func.count(HotelModel.id).desc()).limit(50).all()
+    
+    return [
+        {
+            "city": c.city,
+            "state": c.state,
+            "country": c.country,
+            "hotel_count": c.hotel_count
+        }
+        for c in cities
+    ]
+
+
+@hotel_router.post("/search")
+async def search_hotels(
+    request: HotelSearchRequest,
+    db: Session = Depends(get_db)
+):
+    """Search hotels with advanced filters"""
+    
+    # Calculate nights (default to 1 if dates not provided)
+    nights = 1
+    if request.check_in_date and request.check_out_date:
+        check_in = datetime.strptime(request.check_in_date, "%Y-%m-%d")
+        check_out = datetime.strptime(request.check_out_date, "%Y-%m-%d")
+        nights = max(1, (check_out - check_in).days)
+    
+    # Base query
+    query = db.query(HotelModel).filter(
+        HotelModel.is_active == 1,
+        HotelModel.city.ilike(f"%{request.city}%")
+    )
+    
+    # Apply filters
+    if request.star_rating:
+        query = query.filter(HotelModel.star_category.in_(request.star_rating))
+    
+    if request.min_price:
+        query = query.filter(HotelModel.price_per_night >= request.min_price)
+    
+    if request.max_price:
+        query = query.filter(HotelModel.price_per_night <= request.max_price)
+    
+    if request.hotel_type:
+        query = query.filter(HotelModel.hotel_type.ilike(f"%{request.hotel_type}%"))
+    
+    if request.free_cancellation:
+        query = query.filter(HotelModel.free_cancellation == 1)
+    
+    if request.breakfast_included:
+        query = query.filter(HotelModel.breakfast_included == 1)
+    
+    # Sorting
+    if request.sort_by == "price_low":
+        query = query.order_by(HotelModel.price_per_night.asc())
+    elif request.sort_by == "price_high":
+        query = query.order_by(HotelModel.price_per_night.desc())
+    elif request.sort_by == "rating":
+        query = query.order_by(HotelModel.rating.desc())
+    elif request.sort_by == "distance":
+        query = query.order_by(HotelModel.distance_from_center.asc())
+    else:
+        query = query.order_by(HotelModel.reviews_count.desc(), HotelModel.rating.desc())
+    
+    # Pagination
+    total = query.count()
+    offset = (request.page - 1) * request.limit
+    hotels = query.offset(offset).limit(request.limit).all()
+    
+    # Format response
+    results = []
+    for hotel in hotels:
+        amenities = parse_json_field(hotel.amenities, [])
+        images = parse_json_field(hotel.images, [])
+        primary_image = images[0]["url"] if images and isinstance(images[0], dict) else (images[0] if images else None)
+        
+        results.append({
+            "id": hotel.id,
+            "name": hotel.name,
+            "slug": hotel.slug,
+            "star_category": hotel.star_category,
+            "hotel_type": hotel.hotel_type,
+            "city": hotel.city,
+            "state": hotel.state,
+            "address": hotel.address,
+            "latitude": hotel.latitude,
+            "longitude": hotel.longitude,
+            "rating": hotel.rating,
+            "reviews_count": hotel.reviews_count,
+            "price_per_night": hotel.price_per_night,
+            "total_price": hotel.price_per_night * nights * request.rooms,
+            "original_price": hotel.original_price,
+            "currency": hotel.currency,
+            "primary_image": primary_image,
+            "amenities": [a["name"] if isinstance(a, dict) else a for a in amenities[:6]],
+            "free_cancellation": hotel.free_cancellation == 1,
+            "breakfast_included": hotel.breakfast_included == 1,
+            "distance_from_center": hotel.distance_from_center,
+            "landmark": hotel.landmark,
+            "nights": nights
+        })
+    
+    return {
+        "hotels": results,
+        "total": total,
+        "page": request.page,
+        "limit": request.limit,
+        "pages": (total + request.limit - 1) // request.limit,
+        "search_params": {
+            "city": request.city,
+            "check_in": request.check_in_date,
+            "check_out": request.check_out_date,
+            "nights": nights,
+            "adults": request.adults,
+            "children": request.children,
+            "rooms": request.rooms
+        }
+    }
+
+
+@hotel_router.get("/detail/{hotel_id}")
+async def get_hotel_detail(
+    hotel_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get detailed hotel information"""
+    hotel = db.query(HotelModel).filter(
+        HotelModel.id == hotel_id,
+        HotelModel.is_active == 1
+    ).first()
+    
+    if not hotel:
+        raise HTTPException(status_code=404, detail="Hotel not found")
+    
+    return {
+        "id": hotel.id,
+        "name": hotel.name,
+        "slug": hotel.slug,
+        "description": hotel.description,
+        "star_category": hotel.star_category,
+        "hotel_type": hotel.hotel_type,
+        "city": hotel.city,
+        "state": hotel.state,
+        "country": hotel.country,
+        "address": hotel.address,
+        "latitude": hotel.latitude,
+        "longitude": hotel.longitude,
+        "landmark": hotel.landmark,
+        "distance_from_center": hotel.distance_from_center,
+        "rating": hotel.rating,
+        "reviews_count": hotel.reviews_count,
+        "price_per_night": hotel.price_per_night,
+        "original_price": hotel.original_price,
+        "currency": hotel.currency,
+        "amenities": parse_json_field(hotel.amenities, []),
+        "images": parse_json_field(hotel.images, []),
+        "policies": parse_json_field(hotel.policies, []),
+        "check_in_time": hotel.check_in_time,
+        "check_out_time": hotel.check_out_time,
+        "contact_phone": hotel.contact_phone,
+        "contact_email": hotel.contact_email,
+        "gst_number": hotel.gst_number,
+        "free_cancellation": hotel.free_cancellation == 1,
+        "breakfast_included": hotel.breakfast_included == 1,
+        "total_rooms": hotel.total_rooms
+    }
+
+
+@hotel_router.get("/detail/slug/{slug}")
+async def get_hotel_by_slug(
+    slug: str,
+    db: Session = Depends(get_db)
+):
+    """Get hotel by slug"""
+    hotel = db.query(HotelModel).filter(
+        HotelModel.slug == slug,
+        HotelModel.is_active == 1
+    ).first()
+    
+    if not hotel:
+        raise HTTPException(status_code=404, detail="Hotel not found")
+    
+    return await get_hotel_detail(hotel.id, db)
+
+
+# Alternative endpoint without /detail/ prefix (for frontend compatibility)
+@hotel_router.get("/{hotel_id}", response_model=None)
+async def get_hotel_by_id(
+    hotel_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get hotel by ID (alias for /detail/{hotel_id})"""
+    return await get_hotel_detail(hotel_id, db)
+
+
+@hotel_router.get("/{hotel_id}/rooms")
+async def get_hotel_rooms(
+    hotel_id: int,
+    check_in: Optional[str] = None,
+    check_out: Optional[str] = None,
+    guests: int = 2,
+    db: Session = Depends(get_db)
+):
+    """Get available rooms for a hotel"""
+    rooms = db.query(HotelRoomModel).filter(
+        HotelRoomModel.hotel_id == hotel_id,
+        HotelRoomModel.is_active == 1,
+        HotelRoomModel.max_guests >= guests
+    ).order_by(HotelRoomModel.price_per_night.asc()).all()
+    
+    results = []
+    for room in rooms:
+        results.append({
+            "id": room.id,
+            "hotel_id": room.hotel_id,
+            "room_type": room.room_type,
+            "room_name": room.room_name,
+            "description": room.description,
+            "max_guests": room.max_guests,
+            "max_adults": room.max_adults,
+            "max_children": room.max_children,
+            "bed_type": room.bed_type,
+            "room_size_sqft": room.room_size_sqft,
+            "view_type": room.view_type,
+            "price_per_night": room.price_per_night,
+            "original_price": room.original_price,
+            "discount_percent": room.discount_percent,
+            "amenities": parse_json_field(room.amenities, []),
+            "images": parse_json_field(room.images, []),
+            "inclusions": parse_json_field(room.inclusions, []),
+            "cancellation_policy": room.cancellation_policy,
+            "available_rooms": room.available_rooms,
+            "is_refundable": room.is_refundable == 1
+        })
+    
+    return {"rooms": results, "count": len(results)}
+
+
+@hotel_router.post("/book")
+async def create_hotel_booking(
+    booking: HotelBookingCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new hotel booking"""
+    
+    # Validate hotel
+    hotel = db.query(HotelModel).filter(HotelModel.id == booking.hotel_id).first()
+    if not hotel:
+        raise HTTPException(status_code=404, detail="Hotel not found")
+    
+    # Validate room
+    room = db.query(HotelRoomModel).filter(
+        HotelRoomModel.id == booking.room_id,
+        HotelRoomModel.hotel_id == booking.hotel_id
+    ).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Check availability
+    if room.available_rooms < booking.rooms_booked:
+        raise HTTPException(status_code=400, detail="Not enough rooms available")
+    
+    # Calculate nights
+    check_in = datetime.strptime(booking.check_in_date, "%Y-%m-%d")
+    check_out = datetime.strptime(booking.check_out_date, "%Y-%m-%d")
+    nights = max(1, (check_out - check_in).days)
+    
+    # Calculate pricing
+    base_price = room.price_per_night * nights * booking.rooms_booked
+    taxes = round(base_price * 0.18, 2)  # 18% GST
+    service_charge = round(base_price * 0.02, 2)  # 2% service charge
+    total_amount = round(base_price + taxes + service_charge, 2)
+    
+    # Generate booking ID and reference
+    booking_id = str(uuid.uuid4())
+    booking_reference = generate_hotel_booking_ref()
+    
+    # Generate QR code
+    qr_data = json.dumps({
+        "booking_ref": booking_reference,
+        "hotel": hotel.name,
+        "guest": booking.guest_name,
+        "check_in": booking.check_in_date,
+        "check_out": booking.check_out_date
+    })
+    
+    # Create booking
+    new_booking = HotelBookingModel(
+        booking_id=booking_id,
+        booking_reference=booking_reference,
+        user_id=current_user.id,
+        hotel_id=booking.hotel_id,
+        room_id=booking.room_id,
+        check_in_date=booking.check_in_date,
+        check_out_date=booking.check_out_date,
+        check_in_time=hotel.check_in_time,
+        check_out_time=hotel.check_out_time,
+        nights=nights,
+        rooms_booked=booking.rooms_booked,
+        adults=booking.adults,
+        children=booking.children,
+        guest_name=booking.guest_name,
+        guest_email=booking.guest_email,
+        guest_phone=booking.guest_phone,
+        guest_nationality=booking.guest_nationality,
+        special_requests=booking.special_requests,
+        base_price=base_price,
+        taxes=taxes,
+        service_charge=service_charge,
+        total_amount=total_amount,
+        qr_code=qr_data
+    )
+    
+    db.add(new_booking)
+    
+    # Update room availability
+    room.available_rooms -= booking.rooms_booked
+    
+    db.commit()
+    db.refresh(new_booking)
+    
+    return {
+        "booking_id": new_booking.booking_id,
+        "booking_reference": new_booking.booking_reference,
+        "hotel_name": hotel.name,
+        "hotel_address": hotel.address,
+        "hotel_phone": hotel.contact_phone,
+        "hotel_email": hotel.contact_email,
+        "hotel_star": hotel.star_category,
+        "hotel_gst": hotel.gst_number,
+        "room_type": room.room_type,
+        "room_name": room.room_name,
+        "bed_type": room.bed_type,
+        "check_in_date": new_booking.check_in_date,
+        "check_out_date": new_booking.check_out_date,
+        "check_in_time": new_booking.check_in_time,
+        "check_out_time": new_booking.check_out_time,
+        "nights": new_booking.nights,
+        "rooms_booked": new_booking.rooms_booked,
+        "adults": new_booking.adults,
+        "children": new_booking.children,
+        "guest_name": new_booking.guest_name,
+        "guest_email": new_booking.guest_email,
+        "guest_phone": new_booking.guest_phone,
+        "guest_nationality": new_booking.guest_nationality,
+        "special_requests": new_booking.special_requests,
+        "base_price": new_booking.base_price,
+        "taxes": new_booking.taxes,
+        "service_charge": new_booking.service_charge,
+        "discount_amount": new_booking.discount_amount,
+        "total_amount": new_booking.total_amount,
+        "currency": new_booking.currency,
+        "payment_status": new_booking.payment_status,
+        "booking_status": new_booking.booking_status,
+        "qr_code": new_booking.qr_code,
+        "created_at": new_booking.created_at
+    }
+
+
+@hotel_router.get("/booking/{booking_ref}")
+async def get_hotel_booking(
+    booking_ref: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get hotel booking details by reference"""
+    booking = db.query(HotelBookingModel).filter(
+        or_(
+            HotelBookingModel.booking_reference == booking_ref,
+            HotelBookingModel.booking_id == booking_ref
+        ),
+        HotelBookingModel.user_id == current_user.id
+    ).first()
+    
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    hotel = db.query(HotelModel).filter(HotelModel.id == booking.hotel_id).first()
+    room = db.query(HotelRoomModel).filter(HotelRoomModel.id == booking.room_id).first()
+    
+    return {
+        "booking_id": booking.booking_id,
+        "booking_reference": booking.booking_reference,
+        "hotel_name": hotel.name if hotel else None,
+        "hotel_address": hotel.address if hotel else None,
+        "hotel_phone": hotel.contact_phone if hotel else None,
+        "hotel_email": hotel.contact_email if hotel else None,
+        "hotel_star": hotel.star_category if hotel else None,
+        "hotel_gst": hotel.gst_number if hotel else None,
+        "hotel_city": hotel.city if hotel else None,
+        "hotel_state": hotel.state if hotel else None,
+        "hotel_images": parse_json_field(hotel.images, []) if hotel else [],
+        "room_type": room.room_type if room else None,
+        "room_name": room.room_name if room else None,
+        "bed_type": room.bed_type if room else None,
+        "check_in_date": booking.check_in_date,
+        "check_out_date": booking.check_out_date,
+        "check_in_time": booking.check_in_time,
+        "check_out_time": booking.check_out_time,
+        "nights": booking.nights,
+        "rooms_booked": booking.rooms_booked,
+        "adults": booking.adults,
+        "children": booking.children,
+        "guest_name": booking.guest_name,
+        "guest_email": booking.guest_email,
+        "guest_phone": booking.guest_phone,
+        "guest_nationality": booking.guest_nationality,
+        "special_requests": booking.special_requests,
+        "base_price": booking.base_price,
+        "taxes": booking.taxes,
+        "service_charge": booking.service_charge,
+        "discount_amount": booking.discount_amount,
+        "total_amount": booking.total_amount,
+        "currency": booking.currency,
+        "payment_status": booking.payment_status,
+        "payment_method": booking.payment_method,
+        "transaction_id": booking.transaction_id,
+        "booking_status": booking.booking_status,
+        "qr_code": booking.qr_code,
+        "created_at": booking.created_at,
+        "cancellation_policy": room.cancellation_policy if room else None
+    }
+
+
+@hotel_router.get("/my-bookings")
+async def get_my_hotel_bookings(
+    status: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get user's hotel bookings"""
+    query = db.query(HotelBookingModel).filter(
+        HotelBookingModel.user_id == current_user.id
+    )
+    
+    if status:
+        query = query.filter(HotelBookingModel.booking_status == status)
+    
+    bookings = query.order_by(HotelBookingModel.created_at.desc()).all()
+    
+    results = []
+    for booking in bookings:
+        hotel = db.query(HotelModel).filter(HotelModel.id == booking.hotel_id).first()
+        room = db.query(HotelRoomModel).filter(HotelRoomModel.id == booking.room_id).first()
+        
+        images = parse_json_field(hotel.images, []) if hotel else []
+        primary_image = images[0]["url"] if images and isinstance(images[0], dict) else (images[0] if images else None)
+        
+        results.append({
+            "booking_id": booking.booking_id,
+            "booking_reference": booking.booking_reference,
+            "hotel_name": hotel.name if hotel else None,
+            "hotel_city": hotel.city if hotel else None,
+            "hotel_star": hotel.star_category if hotel else None,
+            "hotel_image": primary_image,
+            "room_type": room.room_type if room else None,
+            "check_in_date": booking.check_in_date,
+            "check_out_date": booking.check_out_date,
+            "nights": booking.nights,
+            "total_amount": booking.total_amount,
+            "currency": booking.currency,
+            "booking_status": booking.booking_status,
+            "payment_status": booking.payment_status,
+            "created_at": booking.created_at
+        })
+    
+    return {"bookings": results, "count": len(results)}
+
+
+@hotel_router.post("/booking/{booking_ref}/cancel")
+async def cancel_hotel_booking(
+    booking_ref: str,
+    reason: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Cancel a hotel booking"""
+    booking = db.query(HotelBookingModel).filter(
+        HotelBookingModel.booking_reference == booking_ref,
+        HotelBookingModel.user_id == current_user.id
+    ).first()
+    
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if booking.booking_status == "cancelled":
+        raise HTTPException(status_code=400, detail="Booking already cancelled")
+    
+    if booking.booking_status == "completed":
+        raise HTTPException(status_code=400, detail="Cannot cancel completed booking")
+    
+    # Calculate refund based on policy
+    check_in = datetime.strptime(booking.check_in_date, "%Y-%m-%d")
+    days_until_checkin = (check_in - datetime.now()).days
+    
+    if days_until_checkin > 7:
+        refund_percent = 100
+    elif days_until_checkin > 3:
+        refund_percent = 75
+    elif days_until_checkin > 1:
+        refund_percent = 50
+    else:
+        refund_percent = 0
+    
+    refund_amount = round(booking.total_amount * refund_percent / 100, 2)
+    
+    # Update booking
+    booking.booking_status = "cancelled"
+    booking.cancellation_reason = reason
+    booking.cancelled_at = datetime.now(timezone.utc)
+    booking.refund_amount = refund_amount
+    booking.refund_status = "pending" if refund_amount > 0 else None
+    
+    # Restore room availability
+    room = db.query(HotelRoomModel).filter(HotelRoomModel.id == booking.room_id).first()
+    if room:
+        room.available_rooms += booking.rooms_booked
+    
+    db.commit()
+    
+    return {
+        "message": "Booking cancelled successfully",
+        "booking_reference": booking.booking_reference,
+        "refund_amount": refund_amount,
+        "refund_percent": refund_percent,
+        "refund_status": booking.refund_status
+    }
+
+
+@hotel_router.post("/booking/{booking_ref}/payment")
+async def update_hotel_payment(
+    booking_ref: str,
+    payment_method: str,
+    transaction_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update payment status for hotel booking"""
+    booking = db.query(HotelBookingModel).filter(
+        HotelBookingModel.booking_reference == booking_ref,
+        HotelBookingModel.user_id == current_user.id
+    ).first()
+    
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    booking.payment_status = "paid"
+    booking.payment_method = payment_method
+    booking.transaction_id = transaction_id
+    booking.payment_date = datetime.now(timezone.utc)
+    
+    db.commit()
+    
+    return {
+        "message": "Payment updated successfully",
+        "booking_reference": booking.booking_reference,
+        "payment_status": booking.payment_status
+    }
+
+
+@hotel_router.get("/{hotel_id}/reviews")
+async def get_hotel_reviews(
+    hotel_id: int,
+    page: int = 1,
+    limit: int = 10,
+    db: Session = Depends(get_db)
+):
+    """Get hotel reviews"""
+    query = db.query(HotelReviewModel).filter(
+        HotelReviewModel.hotel_id == hotel_id,
+        HotelReviewModel.is_active == 1
+    )
+    
+    total = query.count()
+    offset = (page - 1) * limit
+    reviews = query.order_by(HotelReviewModel.created_at.desc()).offset(offset).limit(limit).all()
+    
+    results = []
+    for review in reviews:
+        user = db.query(UserModel).filter(UserModel.id == review.user_id).first()
+        results.append({
+            "id": review.id,
+            "hotel_id": review.hotel_id,
+            "user_name": user.full_name if user else "Anonymous",
+            "rating": review.rating,
+            "cleanliness_rating": review.cleanliness_rating,
+            "service_rating": review.service_rating,
+            "location_rating": review.location_rating,
+            "value_rating": review.value_rating,
+            "title": review.title,
+            "review_text": review.review_text,
+            "pros": review.pros,
+            "cons": review.cons,
+            "travel_type": review.travel_type,
+            "is_verified": review.is_verified == 1,
+            "helpful_count": review.helpful_count,
+            "created_at": review.created_at
+        })
+    
+    # Calculate rating breakdown
+    all_reviews = db.query(HotelReviewModel).filter(
+        HotelReviewModel.hotel_id == hotel_id,
+        HotelReviewModel.is_active == 1
+    ).all()
+    
+    rating_breakdown = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0}
+    avg_cleanliness = avg_service = avg_location = avg_value = 0
+    
+    if all_reviews:
+        for r in all_reviews:
+            rating_breakdown[int(r.rating)] = rating_breakdown.get(int(r.rating), 0) + 1
+            if r.cleanliness_rating:
+                avg_cleanliness += r.cleanliness_rating
+            if r.service_rating:
+                avg_service += r.service_rating
+            if r.location_rating:
+                avg_location += r.location_rating
+            if r.value_rating:
+                avg_value += r.value_rating
+        
+        count = len(all_reviews)
+        avg_cleanliness = round(avg_cleanliness / count, 1) if avg_cleanliness else 0
+        avg_service = round(avg_service / count, 1) if avg_service else 0
+        avg_location = round(avg_location / count, 1) if avg_location else 0
+        avg_value = round(avg_value / count, 1) if avg_value else 0
+    
+    return {
+        "reviews": results,
+        "total": total,
+        "page": page,
+        "pages": (total + limit - 1) // limit,
+        "rating_breakdown": rating_breakdown,
+        "category_ratings": {
+            "cleanliness": avg_cleanliness,
+            "service": avg_service,
+            "location": avg_location,
+            "value": avg_value
+        }
+    }
+
+
+@hotel_router.post("/{hotel_id}/reviews")
+async def create_hotel_review(
+    hotel_id: int,
+    review: HotelReviewCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a hotel review"""
+    # Check if user has a booking for this hotel
+    has_booking = db.query(HotelBookingModel).filter(
+        HotelBookingModel.hotel_id == hotel_id,
+        HotelBookingModel.user_id == current_user.id,
+        HotelBookingModel.booking_status.in_(["confirmed", "completed"])
+    ).first()
+    
+    new_review = HotelReviewModel(
+        hotel_id=hotel_id,
+        booking_id=review.booking_id,
+        user_id=current_user.id,
+        rating=review.rating,
+        cleanliness_rating=review.cleanliness_rating,
+        service_rating=review.service_rating,
+        location_rating=review.location_rating,
+        value_rating=review.value_rating,
+        title=review.title,
+        review_text=review.review_text,
+        pros=review.pros,
+        cons=review.cons,
+        travel_type=review.travel_type,
+        is_verified=1 if has_booking else 0
+    )
+    
+    db.add(new_review)
+    
+    # Update hotel rating
+    hotel = db.query(HotelModel).filter(HotelModel.id == hotel_id).first()
+    if hotel:
+        all_ratings = db.query(func.avg(HotelReviewModel.rating)).filter(
+            HotelReviewModel.hotel_id == hotel_id,
+            HotelReviewModel.is_active == 1
+        ).scalar()
+        hotel.rating = round(float(all_ratings or 0), 1)
+        hotel.reviews_count = db.query(HotelReviewModel).filter(
+            HotelReviewModel.hotel_id == hotel_id,
+            HotelReviewModel.is_active == 1
+        ).count() + 1
+    
+    db.commit()
+    db.refresh(new_review)
+    
+    return {"message": "Review submitted successfully", "review_id": new_review.id}
+
+
+@hotel_router.post("/wishlist/{hotel_id}")
+async def toggle_hotel_wishlist(
+    hotel_id: int,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Add/remove hotel from wishlist"""
+    existing = db.query(HotelWishlistModel).filter(
+        HotelWishlistModel.user_id == current_user.id,
+        HotelWishlistModel.hotel_id == hotel_id
+    ).first()
+    
+    if existing:
+        db.delete(existing)
+        db.commit()
+        return {"message": "Removed from wishlist", "in_wishlist": False}
+    else:
+        wishlist = HotelWishlistModel(user_id=current_user.id, hotel_id=hotel_id)
+        db.add(wishlist)
+        db.commit()
+        return {"message": "Added to wishlist", "in_wishlist": True}
+
+
+@hotel_router.get("/wishlist")
+async def get_hotel_wishlist(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get user's hotel wishlist"""
+    wishlists = db.query(HotelWishlistModel).filter(
+        HotelWishlistModel.user_id == current_user.id
+    ).all()
+    
+    results = []
+    for w in wishlists:
+        hotel = db.query(HotelModel).filter(HotelModel.id == w.hotel_id).first()
+        if hotel:
+            images = parse_json_field(hotel.images, [])
+            primary_image = images[0]["url"] if images and isinstance(images[0], dict) else (images[0] if images else None)
+            results.append({
+                "id": hotel.id,
+                "name": hotel.name,
+                "city": hotel.city,
+                "star_category": hotel.star_category,
+                "rating": hotel.rating,
+                "price_per_night": hotel.price_per_night,
+                "primary_image": primary_image
+            })
+    
+    return {"wishlist": results, "count": len(results)}
+
+
+@hotel_router.get("/featured")
+async def get_featured_hotels(
+    limit: int = 10,
+    db: Session = Depends(get_db)
+):
+    """Get featured hotels"""
+    hotels = db.query(HotelModel).filter(
+        HotelModel.is_active == 1,
+        HotelModel.is_featured == 1
+    ).order_by(HotelModel.rating.desc()).limit(limit).all()
+    
+    results = []
+    for hotel in hotels:
+        images = parse_json_field(hotel.images, [])
+        primary_image = images[0]["url"] if images and isinstance(images[0], dict) else (images[0] if images else None)
+        results.append({
+            "id": hotel.id,
+            "name": hotel.name,
+            "slug": hotel.slug,
+            "city": hotel.city,
+            "state": hotel.state,
+            "star_category": hotel.star_category,
+            "rating": hotel.rating,
+            "reviews_count": hotel.reviews_count,
+            "price_per_night": hotel.price_per_night,
+            "original_price": hotel.original_price,
+            "primary_image": primary_image,
+            "free_cancellation": hotel.free_cancellation == 1
+        })
+    
+    return {"hotels": results}
+
+
+@hotel_router.get("/popular-cities")
+async def get_popular_hotel_cities(
+    limit: int = 12,
+    db: Session = Depends(get_db)
+):
+    """Get popular cities for hotels"""
+    cities = db.query(
+        HotelModel.city,
+        HotelModel.state,
+        func.count(HotelModel.id).label("hotel_count"),
+        func.min(HotelModel.price_per_night).label("starting_price")
+    ).filter(
+        HotelModel.is_active == 1
+    ).group_by(
+        HotelModel.city, HotelModel.state
+    ).order_by(
+        func.count(HotelModel.id).desc()
+    ).limit(limit).all()
+    
+    # City images mapping
+    city_images = {
+        "Mumbai": "https://images.unsplash.com/photo-1570168007204-dfb528c6958f?w=800",
+        "Delhi": "https://images.unsplash.com/photo-1587474260584-136574528ed5?w=800",
+        "New Delhi": "https://images.unsplash.com/photo-1587474260584-136574528ed5?w=800",
+        "Bangalore": "https://images.unsplash.com/photo-1596176530529-78163a4f7af2?w=800",
+        "Goa": "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800",
+        "Jaipur": "https://images.unsplash.com/photo-1477587458883-47145ed94245?w=800",
+        "Chennai": "https://images.unsplash.com/photo-1582510003544-4d00b7f74220?w=800",
+        "Kolkata": "https://images.unsplash.com/photo-1558431382-27e303142255?w=800",
+        "Hyderabad": "https://images.unsplash.com/photo-1572711679396-4cf9f5be3c85?w=800",
+        "Pune": "https://images.unsplash.com/photo-1580581096469-8afb38397839?w=800",
+        "Ahmedabad": "https://images.unsplash.com/photo-1569154941061-e231b4725ef1?w=800",
+        "Kochi": "https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=800",
+        "Ernakulam": "https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=800",
+        "Udaipur": "https://images.unsplash.com/photo-1568495248636-6432b97bd949?w=800",
+        "Agra": "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=800",
+        "Varanasi": "https://images.unsplash.com/photo-1561361513-2d000a50f0dc?w=800",
+    }
+    
+    default_image = "https://images.unsplash.com/photo-1455587734955-081b22074882?w=800"
+    
+    results = []
+    for city in cities:
+        results.append({
+            "city": city.city,
+            "state": city.state,
+            "hotel_count": city.hotel_count,
+            "starting_price": city.starting_price,
+            "image": city_images.get(city.city, default_image)
+        })
+    
+    return {"cities": results}
+
+
+# Hotel Data Seed Endpoint
+@hotel_router.post("/seed")
+async def seed_hotel_data(db: Session = Depends(get_db)):
+    """Seed hotel data from Kaggle dataset"""
+    import pandas as pd
+    import re
+    
+    # Check if data already exists
+    existing = db.query(HotelModel).count()
+    if existing > 0:
+        return {"message": "Hotel data already seeded", "hotels": existing}
+    
+    # Load dataset
+    dataset_path = os.path.join(os.path.dirname(__file__), "hotels_dataset.csv")
+    if not os.path.exists(dataset_path):
+        raise HTTPException(status_code=500, detail="Dataset file not found")
+    
+    df = pd.read_csv(dataset_path)
+    
+    # Clean and process data
+    df = df.drop_duplicates(subset=['Hotel Name'], keep='first')
+    df = df.dropna(subset=['Hotel Name', 'City', 'State'])
+    
+    # Star category mapping
+    star_map = {"1 Star": 1, "2 Star": 2, "3 Star": 3, "4 Star": 4, "5 Star": 5}
+    
+    # Price ranges by star category
+    price_ranges = {
+        1: (800, 2000),
+        2: (1500, 4000),
+        3: (3000, 8000),
+        4: (6000, 15000),
+        5: (12000, 50000)
+    }
+    
+    # Amenities by star category
+    amenities_by_star = {
+        1: [
+            {"name": "Free WiFi", "icon": "Wifi", "category": "connectivity"},
+            {"name": "24/7 Front Desk", "icon": "Clock", "category": "service"},
+            {"name": "Room Service", "icon": "Utensils", "category": "dining"},
+            {"name": "Housekeeping", "icon": "Sparkles", "category": "service"}
+        ],
+        2: [
+            {"name": "Free WiFi", "icon": "Wifi", "category": "connectivity"},
+            {"name": "Air Conditioning", "icon": "Thermometer", "category": "comfort"},
+            {"name": "TV", "icon": "Tv", "category": "entertainment"},
+            {"name": "24/7 Front Desk", "icon": "Clock", "category": "service"},
+            {"name": "Room Service", "icon": "Utensils", "category": "dining"},
+            {"name": "Parking", "icon": "Car", "category": "facility"}
+        ],
+        3: [
+            {"name": "Free WiFi", "icon": "Wifi", "category": "connectivity"},
+            {"name": "Air Conditioning", "icon": "Thermometer", "category": "comfort"},
+            {"name": "Smart TV", "icon": "Tv", "category": "entertainment"},
+            {"name": "24/7 Front Desk", "icon": "Clock", "category": "service"},
+            {"name": "Room Service", "icon": "Utensils", "category": "dining"},
+            {"name": "Restaurant", "icon": "UtensilsCrossed", "category": "dining"},
+            {"name": "Parking", "icon": "Car", "category": "facility"},
+            {"name": "Laundry Service", "icon": "Shirt", "category": "service"},
+            {"name": "Elevator", "icon": "ArrowUpDown", "category": "facility"}
+        ],
+        4: [
+            {"name": "High-Speed WiFi", "icon": "Wifi", "category": "connectivity"},
+            {"name": "Air Conditioning", "icon": "Thermometer", "category": "comfort"},
+            {"name": "Smart TV", "icon": "Tv", "category": "entertainment"},
+            {"name": "24/7 Concierge", "icon": "Clock", "category": "service"},
+            {"name": "In-Room Dining", "icon": "Utensils", "category": "dining"},
+            {"name": "Multi-Cuisine Restaurant", "icon": "UtensilsCrossed", "category": "dining"},
+            {"name": "Swimming Pool", "icon": "Waves", "category": "recreation"},
+            {"name": "Fitness Center", "icon": "Dumbbell", "category": "recreation"},
+            {"name": "Spa", "icon": "Sparkles", "category": "wellness"},
+            {"name": "Valet Parking", "icon": "Car", "category": "facility"},
+            {"name": "Business Center", "icon": "Briefcase", "category": "business"},
+            {"name": "Banquet Hall", "icon": "Building", "category": "events"}
+        ],
+        5: [
+            {"name": "Premium WiFi", "icon": "Wifi", "category": "connectivity"},
+            {"name": "Climate Control", "icon": "Thermometer", "category": "comfort"},
+            {"name": "65\" Smart TV", "icon": "Tv", "category": "entertainment"},
+            {"name": "Butler Service", "icon": "User", "category": "service"},
+            {"name": "24/7 Room Service", "icon": "Utensils", "category": "dining"},
+            {"name": "Fine Dining Restaurants", "icon": "UtensilsCrossed", "category": "dining"},
+            {"name": "Infinity Pool", "icon": "Waves", "category": "recreation"},
+            {"name": "World-Class Gym", "icon": "Dumbbell", "category": "recreation"},
+            {"name": "Luxury Spa", "icon": "Sparkles", "category": "wellness"},
+            {"name": "Valet Parking", "icon": "Car", "category": "facility"},
+            {"name": "Executive Lounge", "icon": "Briefcase", "category": "business"},
+            {"name": "Helipad", "icon": "Plane", "category": "facility"},
+            {"name": "Private Beach", "icon": "Umbrella", "category": "recreation"},
+            {"name": "Golf Course", "icon": "Circle", "category": "recreation"},
+            {"name": "Kids Club", "icon": "Baby", "category": "family"}
+        ]
+    }
+    
+    # Room types by star category
+    room_types_by_star = {
+        1: [
+            {"type": "Standard", "name": "Standard Room", "bed": "Double Bed", "size": 180, "price_mult": 1.0, "guests": 2},
+            {"type": "Deluxe", "name": "Deluxe Room", "bed": "Queen Bed", "size": 220, "price_mult": 1.3, "guests": 2}
+        ],
+        2: [
+            {"type": "Standard", "name": "Standard Room", "bed": "Double Bed", "size": 200, "price_mult": 1.0, "guests": 2},
+            {"type": "Deluxe", "name": "Deluxe Room", "bed": "Queen Bed", "size": 250, "price_mult": 1.3, "guests": 2},
+            {"type": "Family", "name": "Family Room", "bed": "2 Double Beds", "size": 320, "price_mult": 1.6, "guests": 4}
+        ],
+        3: [
+            {"type": "Standard", "name": "Standard Room", "bed": "Queen Bed", "size": 250, "price_mult": 1.0, "guests": 2},
+            {"type": "Superior", "name": "Superior Room", "bed": "King Bed", "size": 300, "price_mult": 1.25, "guests": 2},
+            {"type": "Deluxe", "name": "Deluxe Room", "bed": "King Bed", "size": 350, "price_mult": 1.5, "guests": 3},
+            {"type": "Suite", "name": "Junior Suite", "bed": "King Bed", "size": 450, "price_mult": 2.0, "guests": 3}
+        ],
+        4: [
+            {"type": "Superior", "name": "Superior Room", "bed": "King Bed", "size": 320, "price_mult": 1.0, "guests": 2},
+            {"type": "Deluxe", "name": "Deluxe Room", "bed": "King Bed", "size": 380, "price_mult": 1.3, "guests": 2},
+            {"type": "Premium", "name": "Premium Room", "bed": "King Bed", "size": 420, "price_mult": 1.5, "guests": 3},
+            {"type": "Suite", "name": "Executive Suite", "bed": "King Bed", "size": 550, "price_mult": 2.0, "guests": 3},
+            {"type": "Family Suite", "name": "Family Suite", "bed": "2 King Beds", "size": 650, "price_mult": 2.5, "guests": 5}
+        ],
+        5: [
+            {"type": "Deluxe", "name": "Luxury Room", "bed": "King Bed", "size": 400, "price_mult": 1.0, "guests": 2},
+            {"type": "Premium", "name": "Grand Room", "bed": "King Bed", "size": 480, "price_mult": 1.3, "guests": 2},
+            {"type": "Suite", "name": "Executive Suite", "bed": "King Bed", "size": 600, "price_mult": 1.8, "guests": 3},
+            {"type": "Club Suite", "name": "Club Suite", "bed": "King Bed", "size": 750, "price_mult": 2.2, "guests": 3},
+            {"type": "Presidential", "name": "Presidential Suite", "bed": "Super King Bed", "size": 1200, "price_mult": 4.0, "guests": 4},
+            {"type": "Villa", "name": "Private Villa", "bed": "2 King Beds", "size": 2000, "price_mult": 6.0, "guests": 6}
+        ]
+    }
+    
+    # Hotel images by star category (high quality Unsplash images)
+    hotel_images = {
+        1: [
+            "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1200&q=80",
+            "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=1200&q=80",
+            "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=1200&q=80"
+        ],
+        2: [
+            "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=1200&q=80",
+            "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1200&q=80",
+            "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=1200&q=80",
+            "https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=1200&q=80"
+        ],
+        3: [
+            "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=1200&q=80",
+            "https://images.unsplash.com/photo-1445019980597-93fa8acb246c?w=1200&q=80",
+            "https://images.unsplash.com/photo-1584132915807-fd1f5fbc078f?w=1200&q=80",
+            "https://images.unsplash.com/photo-1568084680786-a84f91d1153c?w=1200&q=80",
+            "https://images.unsplash.com/photo-1578683010236-d716f9a3f461?w=1200&q=80"
+        ],
+        4: [
+            "https://images.unsplash.com/photo-1596436889106-be35e843f974?w=1200&q=80",
+            "https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=1200&q=80",
+            "https://images.unsplash.com/photo-1560200353-ce0a76b1d438?w=1200&q=80",
+            "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1200&q=80",
+            "https://images.unsplash.com/photo-1549294413-26f195200c16?w=1200&q=80",
+            "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1200&q=80"
+        ],
+        5: [
+            "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=1200&q=80",
+            "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=1200&q=80",
+            "https://images.unsplash.com/photo-1615460549969-36fa19521a4f?w=1200&q=80",
+            "https://images.unsplash.com/photo-1602002418082-a4443e081dd1?w=1200&q=80",
+            "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=80",
+            "https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=1200&q=80",
+            "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=1200&q=80"
+        ]
+    }
+    
+    # Policies
+    default_policies = [
+        {"title": "Check-in Time", "description": "Check-in starts at 2:00 PM. Early check-in subject to availability.", "category": "check_in"},
+        {"title": "Check-out Time", "description": "Check-out by 11:00 AM. Late check-out subject to availability and charges.", "category": "check_out"},
+        {"title": "Cancellation Policy", "description": "Free cancellation up to 48 hours before check-in. 50% charge for cancellations within 24-48 hours. No refund for no-shows.", "category": "cancellation"},
+        {"title": "ID Proof Required", "description": "Valid government-issued photo ID mandatory for all guests at check-in.", "category": "documents"},
+        {"title": "Children Policy", "description": "Children under 5 years stay free. Extra bed charges may apply for older children.", "category": "children"},
+        {"title": "Pet Policy", "description": "Pets are not allowed. Service animals are welcome with proper documentation.", "category": "pets"},
+        {"title": "Smoking Policy", "description": "Smoking is prohibited in all indoor areas. Designated smoking zones available.", "category": "smoking"}
+    ]
+    
+    hotels_created = 0
+    rooms_created = 0
+    
+    for _, row in df.iterrows():
+        try:
+            # Get star category
+            star_category = star_map.get(row['Category'], 3)
+            
+            # Generate price
+            price_range = price_ranges[star_category]
+            base_price = random.randint(price_range[0], price_range[1])
+            original_price = int(base_price * random.uniform(1.1, 1.3)) if random.random() > 0.5 else None
+            
+            # Generate slug
+            hotel_name = str(row['Hotel Name']).strip()
+            city = str(row['City']).strip()
+            slug = re.sub(r'[^a-z0-9]+', '-', hotel_name.lower()).strip('-')
+            slug = f"{slug}-{city.lower()}-{hotels_created}"
+            
+            # Random coordinates for the city (approximate)
+            city_coords = {
+                "Mumbai": (19.0760, 72.8777),
+                "Delhi": (28.7041, 77.1025),
+                "New Delhi": (28.6139, 77.2090),
+                "Bangalore": (12.9716, 77.5946),
+                "Chennai": (13.0827, 80.2707),
+                "Hyderabad": (17.3850, 78.4867),
+                "Kolkata": (22.5726, 88.3639),
+                "Pune": (18.5204, 73.8567),
+                "Ahmedabad": (23.0225, 72.5714),
+                "Jaipur": (26.9124, 75.7873),
+                "Goa": (15.2993, 74.1240),
+            }
+            
+            base_lat, base_lng = city_coords.get(city, (20.5937, 78.9629))
+            lat = base_lat + random.uniform(-0.05, 0.05)
+            lng = base_lng + random.uniform(-0.05, 0.05)
+            
+            # Create hotel
+            hotel = HotelModel(
+                name=hotel_name,
+                slug=slug,
+                description=f"Welcome to {hotel_name}, a {star_category}-star hotel located in {city}, {row['State']}. Experience comfort and hospitality at its finest.",
+                star_category=star_category,
+                hotel_type=row.get('Hotel Type', 'Hotel'),
+                city=city,
+                state=str(row['State']).strip(),
+                country="India",
+                address=str(row.get('Address', '')).strip() if pd.notna(row.get('Address')) else None,
+                latitude=lat,
+                longitude=lng,
+                landmark=f"Near City Center, {city}",
+                distance_from_center=round(random.uniform(0.5, 15), 1),
+                rating=round(random.uniform(3.5, 4.9), 1) if star_category >= 3 else round(random.uniform(2.5, 4.0), 1),
+                reviews_count=random.randint(50, 2000),
+                price_per_night=base_price,
+                original_price=original_price,
+                currency="INR",
+                amenities=json.dumps(amenities_by_star[star_category]),
+                images=json.dumps([{"url": img, "caption": f"Hotel view {i+1}", "is_primary": i==0} for i, img in enumerate(hotel_images[star_category])]),
+                policies=json.dumps(default_policies),
+                check_in_time="14:00",
+                check_out_time="11:00",
+                contact_phone=f"+91-{random.randint(7000000000, 9999999999)}",
+                contact_email=f"reservations@{slug.split('-')[0]}.com",
+                gst_number=f"GST{random.randint(10, 99)}{''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ', k=4))}{random.randint(1000, 9999)}Z{random.randint(1, 9)}",
+                is_featured=1 if star_category >= 4 and random.random() > 0.7 else 0,
+                free_cancellation=1 if random.random() > 0.3 else 0,
+                breakfast_included=1 if star_category >= 3 and random.random() > 0.5 else 0,
+                total_rooms=int(row.get('Total Rooms', random.randint(30, 200))) if pd.notna(row.get('Total Rooms')) else random.randint(30, 200)
+            )
+            
+            db.add(hotel)
+            db.flush()
+            hotels_created += 1
+            
+            # Create rooms for this hotel
+            for room_config in room_types_by_star[star_category]:
+                room_price = int(base_price * room_config["price_mult"])
+                room_original = int(room_price * 1.2) if original_price else None
+                
+                room_amenities = ["Air Conditioning", "TV", "WiFi", "Wardrobe", "Bathroom"]
+                if star_category >= 3:
+                    room_amenities.extend(["Mini Bar", "Safe", "Iron", "Hairdryer"])
+                if star_category >= 4:
+                    room_amenities.extend(["Coffee Maker", "Bathrobe", "Slippers", "Work Desk"])
+                if star_category >= 5:
+                    room_amenities.extend(["Butler Service", "Premium Toiletries", "Pillow Menu", "Nespresso Machine"])
+                
+                inclusions = ["Daily Housekeeping"]
+                if hotel.breakfast_included:
+                    inclusions.append("Complimentary Breakfast")
+                if star_category >= 3:
+                    inclusions.append("Free WiFi")
+                if star_category >= 4:
+                    inclusions.extend(["Welcome Drink", "Airport Transfer Discount"])
+                
+                room = HotelRoomModel(
+                    hotel_id=hotel.id,
+                    room_type=room_config["type"],
+                    room_name=room_config["name"],
+                    description=f"Comfortable {room_config['name'].lower()} featuring {room_config['bed'].lower()} and modern amenities.",
+                    max_guests=room_config["guests"],
+                    max_adults=min(room_config["guests"], 3),
+                    max_children=max(0, room_config["guests"] - 2),
+                    bed_type=room_config["bed"],
+                    room_size_sqft=room_config["size"],
+                    view_type=random.choice(["City View", "Garden View", "Pool View", "Mountain View"]) if star_category >= 3 else None,
+                    price_per_night=room_price,
+                    original_price=room_original,
+                    discount_percent=round((1 - room_price/room_original) * 100, 0) if room_original else 0,
+                    amenities=json.dumps(room_amenities),
+                    images=json.dumps([hotel_images[star_category][i % len(hotel_images[star_category])] for i in range(3)]),
+                    inclusions=json.dumps(inclusions),
+                    cancellation_policy="Free cancellation up to 48 hours before check-in",
+                    total_rooms=random.randint(5, 20),
+                    available_rooms=random.randint(3, 15),
+                    is_refundable=1 if random.random() > 0.2 else 0
+                )
+                db.add(room)
+                rooms_created += 1
+            
+        except Exception as e:
+            logging.error(f"Error processing hotel: {e}")
+            continue
+    
+    db.commit()
+    
+    return {
+        "message": "Hotel data seeded successfully",
+        "hotels": hotels_created,
+        "rooms": rooms_created
+    }
+
+
+# Register hotel router
+app.include_router(hotel_router)
 
 
 # =============================
