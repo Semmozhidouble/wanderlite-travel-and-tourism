@@ -12,8 +12,12 @@ const Ticket = () => {
   const passenger = state?.passenger || state?.payer || {};
   const payment = state?.payment || {};
   
-  // Determine service type
-  const serviceType = (booking?.service_type || state?.serviceType || 'flight').toLowerCase();
+  // Determine service type - normalize to lowercase and handle variations
+  const rawServiceType = (booking?.service_type || state?.serviceType || 'flight').toLowerCase();
+  const serviceType = rawServiceType.includes('restaurant') ? 'restaurant' : 
+                      rawServiceType.includes('hotel') ? 'hotel' :
+                      rawServiceType.includes('bus') ? 'bus' : 
+                      rawServiceType.includes('flight') ? 'flight' : rawServiceType;
   
   // Render appropriate ticket component based on service type
   const renderTicket = () => {

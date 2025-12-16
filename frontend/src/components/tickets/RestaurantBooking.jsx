@@ -5,6 +5,9 @@ import { Card } from '../ui/card';
 import { getPublicBaseUrl } from '../../services/publicUrl';
 
 const RestaurantBooking = ({ booking, passenger, payment }) => {
+  // Debug: log what we receive
+  console.log('RestaurantBooking received:', { booking, passenger, payment });
+  
   // Parse service_details if it's a string
   const serviceDetails = typeof booking?.service_details === 'string'
     ? (() => { try { return JSON.parse(booking.service_details); } catch { return {}; } })()
@@ -13,6 +16,10 @@ const RestaurantBooking = ({ booking, passenger, payment }) => {
   const restaurant = serviceDetails.restaurant || serviceDetails;
   const details = serviceDetails;
   const bookingRef = booking?.booking_ref || 'N/A';
+  
+  // Get the payment amount - check multiple sources
+  const paymentAmount = payment?.amount || booking?.amount || booking?.total_price || details?.total_price || 0;
+  console.log('Payment amount:', paymentAmount, 'from payment:', payment?.amount, 'from booking:', booking?.amount);
   
   // QR Code data - Simple URL that opens booking when scanned
   // Uses IP address if available for cross-device scanning
@@ -219,11 +226,29 @@ const RestaurantBooking = ({ booking, passenger, payment }) => {
               <CreditCard className="w-4 h-4" /> PAYMENT DETAILS
             </p>
             {(() => {
-              // Extract fare data
-              const totalAmount = parseFloat(booking?.total_price || payment?.amount || booking?.amount || details?.total_price || 0);
-              const subtotal = parseFloat(details?.subtotal || details?.food_amount || totalAmount * 0.85 || 0);
-              const taxes = parseFloat(details?.taxes || details?.taxes_fees || totalAmount - subtotal || totalAmount * 0.15 || 0);
+              // Extract fare data - check payment.amount first (most reliable source)
+              const totalAmount = parseFloat(
+                payment?.amount || 
+                booking?.amount || 
+                booking?.total_price || 
+                details?.total_price || 
+                0
+              );
+              const subtotal = parseFloat(
+                details?.subtotal || 
+                details?.food_amount || 
+                (totalAmount > 0 ? Math.round(totalAmount * 0.85) : 0)
+              );
+              const packagingCharges = parseFloat(details?.packagingCharges || 0);
+              const gst = parseFloat(details?.gst || 0);
+              const taxes = (packagingCharges + gst) || parseFloat(
+                details?.taxes || 
+                details?.taxes_fees || 
+                (totalAmount > 0 ? totalAmount - subtotal : 0)
+              );
               const discount = parseFloat(details?.discount || payment?.discount || 0);
+              const paymentMethod = payment?.method || passenger?.method || 'Card';
+              const txnId = payment?.id || payment?.booking_ref || booking?.booking_ref || null;
               
               return (
                 <div className="space-y-2">
@@ -231,23 +256,37 @@ const RestaurantBooking = ({ booking, passenger, payment }) => {
                     <span className="text-gray-600">Subtotal (Food & Beverages)</span>
                     <span className="font-semibold">₹{subtotal.toFixed(2)}</span>
                   </div>
+                  {packagingCharges > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Packaging Charges</span>
+                      <span className="font-semibold">₹{packagingCharges.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {gst > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">GST (5%)</span>
+                      <span className="font-semibold">₹{gst.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {(packagingCharges === 0 && gst === 0 && taxes > 0) && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Taxes & Service Charges</span>
+                      <span className="font-semibold">₹{taxes.toFixed(2)}</span>
+                    </div>
+                  )}
                   {discount > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Discount</span>
                       <span className="font-semibold text-green-600">-₹{discount.toFixed(2)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Taxes & Service Charges</span>
-                    <span className="font-semibold">₹{taxes.toFixed(2)}</span>
-                  </div>
                   <div className="flex justify-between text-sm pt-2 border-t border-blue-300">
                     <span className="text-gray-900 font-bold">Advance Amount Paid</span>
                     <span className="text-xl font-bold text-green-600">₹{totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between text-xs text-gray-600 mt-2">
-                    <span>Payment Mode: {payment?.method || 'Card'}</span>
-                    <span>Txn ID: {payment?.id ? `WL${payment.id}` : 'N/A'}</span>
+                    <span>Payment Mode: {paymentMethod}</span>
+                    <span>Txn ID: {txnId ? `WL${txnId}` : bookingRef}</span>
                   </div>
                 </div>
               );

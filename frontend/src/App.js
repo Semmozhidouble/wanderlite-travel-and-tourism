@@ -42,6 +42,9 @@ import Restaurants from "./pages/Restaurants";
 import DestinationDetails from "./pages/DestinationDetails";
 import FlightDetail from "./pages/FlightDetail";
 import RestaurantDetail from "./pages/RestaurantDetail";
+import RestaurantBooking from "./pages/RestaurantBooking";
+import RestaurantReceipt from "./pages/RestaurantReceipt";
+import RestaurantPreOrder from "./pages/RestaurantPreOrder";
 
 // Admin imports
 import AdminLogin from "./pages/AdminLogin";
@@ -118,6 +121,10 @@ const AppContent = () => {
         <Route path="/hotel-booking" element={<ProtectedRoute><HotelBooking /></ProtectedRoute>} />
         <Route path="/hotel-ticket" element={<ProtectedRoute><HotelTicket /></ProtectedRoute>} />
         <Route path="/restaurants" element={<Restaurants />} />
+        <Route path="/restaurant/:id" element={<RestaurantDetail />} />
+        <Route path="/restaurant/:id/book" element={<ProtectedRoute><RestaurantBooking /></ProtectedRoute>} />
+        <Route path="/restaurant/:id/preorder" element={<ProtectedRoute><RestaurantPreOrder /></ProtectedRoute>} />
+        <Route path="/restaurant/booking/:bookingRef" element={<ProtectedRoute><RestaurantReceipt /></ProtectedRoute>} />
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

@@ -18,14 +18,14 @@ import json
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 # from fpdf import FPDF  # Commenting out to avoid numpy issues
-# import qrcode
+import qrcode
 from io import BytesIO
 import base64
 import asyncio
 
 # Placeholder variables to avoid Pylance undefined variable warnings
 FPDF = None
-qrcode = None
+# qrcode is now imported
 import hashlib
 from cryptography.fernet import Fernet
 import httpx
@@ -42,6 +42,8 @@ from sqlalchemy import (
     ForeignKey,
     text,
     func,
+    Date,
+    JSON,
 )
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from sqlalchemy.engine import url as sa_url
@@ -978,6 +980,344 @@ class HotelWishlistModel(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
     hotel_id = Column(Integer, ForeignKey("hotels.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# =============================
+# Advanced Restaurant Booking Models
+# =============================
+
+class RestaurantModel(Base):
+    __tablename__ = "restaurants"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False)
+    slug = Column(String(250), nullable=True, index=True)
+    description = Column(Text, nullable=True)
+    city = Column(String(100), nullable=False, index=True)
+    locality = Column(String(200), nullable=True)
+    address = Column(Text, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    
+    # Cuisine & Category
+    cuisines = Column(JSON, default=[])  # ["South Indian", "North Indian", "Chinese"]
+    restaurant_type = Column(String(100), nullable=True)  # Fine Dining, Casual, Cafe, Fast Food
+    
+    # Ratings & Reviews
+    rating = Column(Float, default=4.0)
+    total_reviews = Column(Integer, default=0)
+    food_rating = Column(Float, nullable=True)
+    service_rating = Column(Float, nullable=True)
+    ambience_rating = Column(Float, nullable=True)
+    
+    # Pricing
+    price_for_two = Column(Integer, default=500)
+    price_category = Column(String(20), default="moderate")  # budget, moderate, expensive, premium
+    
+    # Tags & Features
+    is_pure_veg = Column(Integer, default=0)
+    has_bar = Column(Integer, default=0)
+    is_family_friendly = Column(Integer, default=1)
+    has_outdoor_seating = Column(Integer, default=0)
+    has_ac = Column(Integer, default=1)
+    has_wifi = Column(Integer, default=0)
+    has_parking = Column(Integer, default=0)
+    accepts_reservations = Column(Integer, default=1)
+    has_live_music = Column(Integer, default=0)
+    has_private_dining = Column(Integer, default=0)
+    
+    # Delivery & Takeaway
+    has_delivery = Column(Integer, default=1)
+    has_takeaway = Column(Integer, default=1)
+    avg_delivery_time = Column(Integer, default=30)  # minutes
+    
+    # Timing
+    opening_time = Column(String(10), default="10:00")
+    closing_time = Column(String(10), default="23:00")
+    is_open_now = Column(Integer, default=1)
+    weekly_off = Column(String(20), nullable=True)  # "Sunday", "Monday", etc.
+    
+    # Media
+    images = Column(JSON, default=[])
+    logo_url = Column(String(500), nullable=True)
+    cover_image = Column(String(500), nullable=True)
+    
+    # Contact
+    phone = Column(String(20), nullable=True)
+    email = Column(String(100), nullable=True)
+    website = Column(String(200), nullable=True)
+    
+    # Amenities
+    amenities = Column(JSON, default=[])
+    
+    # Popularity
+    popularity_score = Column(Integer, default=0)
+    is_featured = Column(Integer, default=0)
+    is_trending = Column(Integer, default=0)
+    
+    # Status
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RestaurantTableModel(Base):
+    __tablename__ = "restaurant_tables"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    table_number = Column(String(20), nullable=False)
+    capacity = Column(Integer, default=4)
+    table_type = Column(String(50), default="standard")  # standard, booth, outdoor, private, window
+    seating_type = Column(String(50), default="indoor")  # indoor, outdoor, rooftop, garden
+    is_ac = Column(Integer, default=1)
+    floor = Column(Integer, default=0)
+    description = Column(String(200), nullable=True)
+    min_booking_amount = Column(Integer, default=0)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RestaurantTimeSlotModel(Base):
+    __tablename__ = "restaurant_time_slots"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    slot_time = Column(String(10), nullable=False)  # "12:00", "12:30", etc.
+    slot_type = Column(String(20), default="lunch")  # breakfast, lunch, dinner, late_night
+    is_peak_hour = Column(Integer, default=0)
+    peak_hour_charge_percent = Column(Float, default=0)  # 10, 15, 20%
+    max_reservations = Column(Integer, default=10)
+    is_active = Column(Integer, default=1)
+
+
+class RestaurantTableAvailabilityModel(Base):
+    __tablename__ = "restaurant_table_availability"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_id = Column(Integer, ForeignKey("restaurant_tables.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    time_slot = Column(String(10), nullable=False)
+    is_available = Column(Integer, default=1)
+    booking_id = Column(Integer, nullable=True)
+
+
+class MenuCategoryModel(Base):
+    __tablename__ = "menu_categories"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    name = Column(String(100), nullable=False)
+    description = Column(String(300), nullable=True)
+    display_order = Column(Integer, default=0)
+    image_url = Column(String(500), nullable=True)
+    is_active = Column(Integer, default=1)
+
+
+class MenuItemModel(Base):
+    __tablename__ = "menu_items"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    category_id = Column(Integer, ForeignKey("menu_categories.id"), nullable=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    price = Column(Float, nullable=False)
+    discounted_price = Column(Float, nullable=True)
+    
+    # Type
+    is_veg = Column(Integer, default=1)
+    is_bestseller = Column(Integer, default=0)
+    is_chef_special = Column(Integer, default=0)
+    is_new = Column(Integer, default=0)
+    spice_level = Column(Integer, default=1)  # 1-5
+    
+    # Preparation
+    prep_time_mins = Column(Integer, default=15)
+    serves = Column(Integer, default=1)  # Number of people
+    
+    # Media
+    image_url = Column(String(500), nullable=True)
+    
+    # Availability
+    available_for_preorder = Column(Integer, default=1)
+    available_start_time = Column(String(10), nullable=True)
+    available_end_time = Column(String(10), nullable=True)
+    
+    # Nutrition (optional)
+    calories = Column(Integer, nullable=True)
+    
+    # Status
+    is_available = Column(Integer, default=1)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RestaurantBookingModel(Base):
+    __tablename__ = "restaurant_bookings"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    booking_reference = Column(String(20), unique=True, nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    
+    # Booking Details
+    booking_date = Column(Date, nullable=False)
+    time_slot = Column(String(10), nullable=False)
+    guests_count = Column(Integer, nullable=False)
+    
+    # Table Info
+    table_id = Column(Integer, ForeignKey("restaurant_tables.id"), nullable=True)
+    seating_preference = Column(String(50), nullable=True)  # indoor, outdoor, ac, non_ac
+    
+    # Guest Info
+    guest_name = Column(String(100), nullable=False)
+    guest_phone = Column(String(20), nullable=False)
+    guest_email = Column(String(100), nullable=True)
+    special_requests = Column(Text, nullable=True)
+    occasion = Column(String(50), nullable=True)  # Birthday, Anniversary, Date, Business
+    
+    # Pricing
+    base_amount = Column(Float, default=0)
+    peak_hour_charge = Column(Float, default=0)
+    service_charge = Column(Float, default=0)
+    gst = Column(Float, default=0)
+    total_amount = Column(Float, default=0)
+    advance_paid = Column(Float, default=0)
+    
+    # Payment
+    payment_status = Column(String(20), default="pending")  # pending, partial, paid, refunded
+    payment_method = Column(String(30), nullable=True)
+    transaction_id = Column(String(100), nullable=True)
+    
+    # Status
+    booking_status = Column(String(20), default="confirmed")  # confirmed, completed, cancelled, no_show
+    cancellation_reason = Column(String(200), nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    
+    # QR & Timestamps
+    qr_code = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PreOrderModel(Base):
+    __tablename__ = "pre_orders"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_reference = Column(String(20), unique=True, nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    booking_id = Column(Integer, ForeignKey("restaurant_bookings.id"), nullable=True)
+    
+    # Order Details
+    order_date = Column(Date, nullable=False)
+    arrival_time = Column(String(10), nullable=False)
+    guests_count = Column(Integer, nullable=False)
+    
+    # Guest Info
+    guest_name = Column(String(100), nullable=False)
+    guest_phone = Column(String(20), nullable=False)
+    special_instructions = Column(Text, nullable=True)
+    
+    # Items
+    items = Column(JSON, default=[])  # [{item_id, name, quantity, price, is_veg}]
+    
+    # Preparation
+    estimated_prep_time = Column(Integer, default=30)  # minutes
+    ready_by_time = Column(String(10), nullable=True)
+    
+    # Pricing
+    subtotal = Column(Float, default=0)
+    gst = Column(Float, default=0)
+    packaging_charge = Column(Float, default=0)
+    total_amount = Column(Float, default=0)
+    
+    # Payment
+    payment_status = Column(String(20), default="pending")
+    payment_method = Column(String(30), nullable=True)
+    transaction_id = Column(String(100), nullable=True)
+    
+    # Status
+    order_status = Column(String(20), default="pending")  # pending, confirmed, preparing, ready, completed, cancelled
+    
+    # QR & Timestamps
+    qr_code = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RestaurantQueueModel(Base):
+    __tablename__ = "restaurant_queue"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    queue_number = Column(String(10), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    
+    # Queue Details
+    queue_date = Column(Date, nullable=False)
+    join_time = Column(DateTime, default=datetime.utcnow)
+    guests_count = Column(Integer, nullable=False)
+    
+    # Guest Info
+    guest_name = Column(String(100), nullable=False)
+    guest_phone = Column(String(20), nullable=False)
+    
+    # Position
+    position = Column(Integer, nullable=False)
+    estimated_wait_mins = Column(Integer, default=30)
+    
+    # Status
+    status = Column(String(20), default="waiting")  # waiting, notified, seated, left, expired
+    seated_at = Column(DateTime, nullable=True)
+    left_at = Column(DateTime, nullable=True)
+    
+    # QR
+    qr_code = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RestaurantReviewModel(Base):
+    __tablename__ = "restaurant_reviews"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    booking_id = Column(Integer, ForeignKey("restaurant_bookings.id"), nullable=True)
+    
+    # Ratings
+    overall_rating = Column(Float, nullable=False)
+    food_rating = Column(Float, nullable=True)
+    service_rating = Column(Float, nullable=True)
+    ambience_rating = Column(Float, nullable=True)
+    value_rating = Column(Float, nullable=True)
+    
+    # Review Content
+    title = Column(String(200), nullable=True)
+    review_text = Column(Text, nullable=True)
+    
+    # Dining Type
+    dining_type = Column(String(30), nullable=True)  # Dine-in, Delivery, Takeaway
+    visit_type = Column(String(30), nullable=True)  # Family, Friends, Couple, Business, Solo
+    
+    # Media
+    images = Column(JSON, default=[])
+    
+    # Status
+    is_verified = Column(Integer, default=0)
+    helpful_count = Column(Integer, default=0)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RestaurantWishlistModel(Base):
+    __tablename__ = "restaurant_wishlists"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1997,10 +2337,300 @@ class HotelReviewResponse(BaseModel):
     created_at: datetime
 
 
-class RestaurantSearchQuery(BaseModel):
-    destination: str
-    cuisine: Optional[str] = None
-    budget: Optional[str] = None  # budget / mid-range / fine-dining
+# =============================
+# Advanced Restaurant Pydantic Schemas
+# =============================
+
+class RestaurantSearchRequest(BaseModel):
+    city: str
+    date: Optional[str] = None  # YYYY-MM-DD
+    time: Optional[str] = None  # HH:MM
+    guests: int = 2
+    cuisines: Optional[List[str]] = None
+    is_pure_veg: Optional[bool] = None
+    has_bar: Optional[bool] = None
+    price_category: Optional[str] = None  # budget, moderate, expensive, premium
+    min_rating: Optional[float] = None
+    has_outdoor_seating: Optional[bool] = None
+    has_ac: Optional[bool] = None
+    sort_by: str = "popularity"  # popularity, rating, price_low, price_high, distance
+    page: int = 1
+    limit: int = 20
+
+
+class RestaurantCityResponse(BaseModel):
+    city: str
+    restaurant_count: int
+
+
+class RestaurantListItem(BaseModel):
+    id: int
+    name: str
+    slug: Optional[str]
+    city: str
+    locality: Optional[str]
+    address: Optional[str]
+    cuisines: List[str]
+    restaurant_type: Optional[str]
+    rating: float
+    total_reviews: int
+    price_for_two: int
+    price_category: str
+    is_pure_veg: bool
+    has_bar: bool
+    is_family_friendly: bool
+    has_outdoor_seating: bool
+    has_ac: bool
+    has_delivery: bool
+    avg_delivery_time: int
+    opening_time: str
+    closing_time: str
+    is_open_now: bool
+    cover_image: Optional[str]
+    images: List[str]
+    amenities: List[str]
+    is_featured: bool
+    is_trending: bool
+
+
+class RestaurantDetailResponse(BaseModel):
+    id: int
+    name: str
+    slug: Optional[str]
+    description: Optional[str]
+    city: str
+    locality: Optional[str]
+    address: Optional[str]
+    latitude: Optional[float]
+    longitude: Optional[float]
+    cuisines: List[str]
+    restaurant_type: Optional[str]
+    rating: float
+    total_reviews: int
+    food_rating: Optional[float]
+    service_rating: Optional[float]
+    ambience_rating: Optional[float]
+    price_for_two: int
+    price_category: str
+    is_pure_veg: bool
+    has_bar: bool
+    is_family_friendly: bool
+    has_outdoor_seating: bool
+    has_ac: bool
+    has_wifi: bool
+    has_parking: bool
+    accepts_reservations: bool
+    has_live_music: bool
+    has_private_dining: bool
+    has_delivery: bool
+    has_takeaway: bool
+    avg_delivery_time: int
+    opening_time: str
+    closing_time: str
+    is_open_now: bool
+    weekly_off: Optional[str]
+    images: List[dict]
+    logo_url: Optional[str]
+    cover_image: Optional[str]
+    phone: Optional[str]
+    email: Optional[str]
+    website: Optional[str]
+    amenities: List[dict]
+    is_featured: bool
+    is_trending: bool
+
+
+class RestaurantTableResponse(BaseModel):
+    id: int
+    restaurant_id: int
+    table_number: str
+    capacity: int
+    table_type: str
+    seating_type: str
+    is_ac: bool
+    floor: int
+    description: Optional[str]
+    min_booking_amount: int
+    is_available: bool = True
+
+
+class TimeSlotResponse(BaseModel):
+    slot_time: str
+    slot_type: str
+    is_peak_hour: bool
+    peak_hour_charge_percent: float
+    is_available: bool
+    available_tables: int
+
+
+class MenuCategoryResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    image_url: Optional[str]
+    items_count: int
+
+
+class MenuItemResponse(BaseModel):
+    id: int
+    restaurant_id: int
+    category_id: Optional[int]
+    category_name: Optional[str]
+    name: str
+    description: Optional[str]
+    price: float
+    discounted_price: Optional[float]
+    is_veg: bool
+    is_bestseller: bool
+    is_chef_special: bool
+    is_new: bool
+    spice_level: int
+    prep_time_mins: int
+    serves: int
+    image_url: Optional[str]
+    available_for_preorder: bool
+    is_available: bool
+
+
+class TableBookingCreate(BaseModel):
+    restaurant_id: int
+    booking_date: str  # YYYY-MM-DD
+    time_slot: str  # HH:MM
+    guests_count: int
+    table_id: Optional[int] = None
+    seating_preference: Optional[str] = None  # indoor, outdoor, ac, non_ac
+    guest_name: str
+    guest_phone: str
+    guest_email: Optional[str] = None
+    special_requests: Optional[str] = None
+    occasion: Optional[str] = None  # Birthday, Anniversary, Date, Business
+    payment_method: Optional[str] = None
+
+
+class TableBookingResponse(BaseModel):
+    id: int
+    booking_reference: str
+    restaurant_id: int
+    restaurant_name: str
+    restaurant_address: Optional[str]
+    restaurant_phone: Optional[str]
+    booking_date: str
+    time_slot: str
+    guests_count: int
+    table_number: Optional[str]
+    table_type: Optional[str]
+    seating_preference: Optional[str]
+    guest_name: str
+    guest_phone: str
+    guest_email: Optional[str]
+    special_requests: Optional[str]
+    occasion: Optional[str]
+    base_amount: float
+    peak_hour_charge: float
+    service_charge: float
+    gst: float
+    total_amount: float
+    advance_paid: float
+    payment_status: str
+    payment_method: Optional[str]
+    booking_status: str
+    qr_code: Optional[str]
+    created_at: datetime
+
+
+class PreOrderCreate(BaseModel):
+    restaurant_id: int
+    booking_id: Optional[int] = None
+    order_date: str  # YYYY-MM-DD
+    arrival_time: str  # HH:MM
+    guests_count: int
+    guest_name: str
+    guest_phone: str
+    special_instructions: Optional[str] = None
+    items: List[dict]  # [{item_id, quantity}]
+    payment_method: Optional[str] = None
+
+
+class PreOrderResponse(BaseModel):
+    id: int
+    order_reference: str
+    restaurant_id: int
+    restaurant_name: str
+    booking_id: Optional[int]
+    order_date: str
+    arrival_time: str
+    guests_count: int
+    guest_name: str
+    guest_phone: str
+    special_instructions: Optional[str]
+    items: List[dict]
+    estimated_prep_time: int
+    ready_by_time: Optional[str]
+    subtotal: float
+    gst: float
+    packaging_charge: float
+    total_amount: float
+    payment_status: str
+    payment_method: Optional[str]
+    order_status: str
+    qr_code: Optional[str]
+    created_at: datetime
+
+
+class JoinQueueRequest(BaseModel):
+    restaurant_id: int
+    guests_count: int
+    guest_name: str
+    guest_phone: str
+
+
+class QueueResponse(BaseModel):
+    id: int
+    queue_number: str
+    restaurant_id: int
+    restaurant_name: str
+    queue_date: str
+    join_time: datetime
+    guests_count: int
+    guest_name: str
+    guest_phone: str
+    position: int
+    estimated_wait_mins: int
+    status: str
+    qr_code: Optional[str]
+
+
+class RestaurantReviewCreate(BaseModel):
+    restaurant_id: int
+    booking_id: Optional[int] = None
+    overall_rating: float
+    food_rating: Optional[float] = None
+    service_rating: Optional[float] = None
+    ambience_rating: Optional[float] = None
+    value_rating: Optional[float] = None
+    title: Optional[str] = None
+    review_text: Optional[str] = None
+    dining_type: Optional[str] = None
+    visit_type: Optional[str] = None
+
+
+class RestaurantReviewResponse(BaseModel):
+    id: int
+    restaurant_id: int
+    user_name: str
+    overall_rating: float
+    food_rating: Optional[float]
+    service_rating: Optional[float]
+    ambience_rating: Optional[float]
+    value_rating: Optional[float]
+    title: Optional[str]
+    review_text: Optional[str]
+    dining_type: Optional[str]
+    visit_type: Optional[str]
+    images: List[str]
+    is_verified: bool
+    helpful_count: int
+    created_at: datetime
 
 
 # Add your routes to the router instead of directly to app
@@ -4453,11 +5083,7 @@ async def search_hotels(query: HotelSearchQuery):
     return {"hotels": hotels, "count": len(hotels)}
 
 
-@api_router.post("/search/restaurants")
-async def search_restaurants(query: RestaurantSearchQuery):
-    """Search for restaurants"""
-    restaurants = _generate_mock_restaurants(query.destination, query.cuisine, query.budget)
-    return {"restaurants": restaurants, "count": len(restaurants)}
+# Old restaurant search endpoint removed - using new restaurant_router instead
 
 
 # =============================
@@ -9111,6 +9737,1154 @@ async def seed_hotel_data(db: Session = Depends(get_db)):
 
 # Register hotel router
 app.include_router(hotel_router)
+
+
+# =============================
+# Advanced Restaurant Booking Router
+# =============================
+restaurant_router = APIRouter(prefix="/api/restaurant", tags=["Restaurants"])
+
+# Restaurant Images for variety
+RESTAURANT_IMAGES = [
+    "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80",
+    "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=800&q=80",
+    "https://images.unsplash.com/photo-1514933651103-005eec06c04b?w=800&q=80",
+    "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&q=80",
+    "https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?w=800&q=80",
+    "https://images.unsplash.com/photo-1559339352-11d035aa65de?w=800&q=80",
+    "https://images.unsplash.com/photo-1544148103-0773bf10d330?w=800&q=80",
+    "https://images.unsplash.com/photo-1537047902294-62a40c20a6ae?w=800&q=80",
+    "https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?w=800&q=80",
+    "https://images.unsplash.com/photo-1424847651672-bf20a4b0982b?w=800&q=80",
+    "https://images.unsplash.com/photo-1578474846511-04ba529f0b88?w=800&q=80",
+    "https://images.unsplash.com/photo-1590846406792-0adc7f938f1d?w=800&q=80",
+    "https://images.unsplash.com/photo-1564759298141-cef86f51d4d4?w=800&q=80",
+    "https://images.unsplash.com/photo-1551632436-cbf8dd35adfa?w=800&q=80",
+    "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=800&q=80"
+]
+
+FOOD_IMAGES = {
+    "south_indian": [
+        "https://images.unsplash.com/photo-1630383249896-424e482df921?w=400&q=80",
+        "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=400&q=80",
+        "https://images.unsplash.com/photo-1567337710282-00832b415979?w=400&q=80"
+    ],
+    "north_indian": [
+        "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=400&q=80",
+        "https://images.unsplash.com/photo-1596797038530-2c107229654b?w=400&q=80",
+        "https://images.unsplash.com/photo-1631515243349-e0cb75fb8d3a?w=400&q=80"
+    ],
+    "biryani": [
+        "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=400&q=80",
+        "https://images.unsplash.com/photo-1589302168068-964664d93dc0?w=400&q=80"
+    ],
+    "fast_food": [
+        "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&q=80",
+        "https://images.unsplash.com/photo-1550547660-d9450f859349?w=400&q=80"
+    ],
+    "street_food": [
+        "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400&q=80",
+        "https://images.unsplash.com/photo-1606491956689-2ea866880c84?w=400&q=80"
+    ],
+    "bakery": [
+        "https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=400&q=80",
+        "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&q=80"
+    ]
+}
+
+MENU_ITEMS_BY_CUISINE = {
+    "south_indian": [
+        {"name": "Masala Dosa", "price": 120, "is_veg": True, "prep_time": 15, "description": "Crispy rice crepe with potato filling"},
+        {"name": "Idli Sambar", "price": 80, "is_veg": True, "prep_time": 10, "description": "Steamed rice cakes with lentil soup"},
+        {"name": "Vada", "price": 60, "is_veg": True, "prep_time": 12, "description": "Crispy fried lentil donuts"},
+        {"name": "Uttapam", "price": 100, "is_veg": True, "prep_time": 15, "description": "Thick rice pancake with vegetables"},
+        {"name": "Pongal", "price": 90, "is_veg": True, "prep_time": 15, "description": "Rice and lentil porridge"},
+        {"name": "Rava Dosa", "price": 110, "is_veg": True, "prep_time": 12, "description": "Semolina crepe"},
+        {"name": "Filter Coffee", "price": 40, "is_veg": True, "prep_time": 5, "description": "Traditional South Indian coffee"},
+        {"name": "Rasam Rice", "price": 100, "is_veg": True, "prep_time": 15, "description": "Tangy soup with rice"},
+    ],
+    "north_indian": [
+        {"name": "Butter Chicken", "price": 320, "is_veg": False, "prep_time": 25, "description": "Creamy tomato-based chicken curry"},
+        {"name": "Paneer Butter Masala", "price": 280, "is_veg": True, "prep_time": 20, "description": "Cottage cheese in rich tomato gravy"},
+        {"name": "Dal Makhani", "price": 220, "is_veg": True, "prep_time": 30, "description": "Creamy black lentils"},
+        {"name": "Tandoori Roti", "price": 30, "is_veg": True, "prep_time": 8, "description": "Clay oven baked bread"},
+        {"name": "Butter Naan", "price": 50, "is_veg": True, "prep_time": 8, "description": "Soft leavened bread"},
+        {"name": "Chicken Tikka", "price": 280, "is_veg": False, "prep_time": 20, "description": "Grilled marinated chicken"},
+        {"name": "Chole Bhature", "price": 150, "is_veg": True, "prep_time": 18, "description": "Spiced chickpeas with fried bread"},
+        {"name": "Rajma Chawal", "price": 160, "is_veg": True, "prep_time": 20, "description": "Kidney beans curry with rice"},
+    ],
+    "biryani": [
+        {"name": "Hyderabadi Chicken Biryani", "price": 280, "is_veg": False, "prep_time": 35, "description": "Fragrant rice with spiced chicken"},
+        {"name": "Mutton Biryani", "price": 350, "is_veg": False, "prep_time": 40, "description": "Rice layered with tender mutton"},
+        {"name": "Veg Biryani", "price": 200, "is_veg": True, "prep_time": 30, "description": "Aromatic rice with vegetables"},
+        {"name": "Chicken 65 Biryani", "price": 300, "is_veg": False, "prep_time": 35, "description": "Biryani topped with Chicken 65"},
+        {"name": "Egg Biryani", "price": 180, "is_veg": False, "prep_time": 25, "description": "Biryani with boiled eggs"},
+        {"name": "Raita", "price": 50, "is_veg": True, "prep_time": 5, "description": "Yogurt with cucumber"},
+    ],
+    "fast_food": [
+        {"name": "Veg Burger", "price": 120, "is_veg": True, "prep_time": 10, "description": "Crispy veggie patty burger"},
+        {"name": "Chicken Burger", "price": 150, "is_veg": False, "prep_time": 12, "description": "Juicy chicken burger"},
+        {"name": "French Fries", "price": 80, "is_veg": True, "prep_time": 8, "description": "Crispy golden fries"},
+        {"name": "Pizza Margherita", "price": 250, "is_veg": True, "prep_time": 20, "description": "Classic cheese pizza"},
+        {"name": "Chicken Wings", "price": 200, "is_veg": False, "prep_time": 15, "description": "Spicy fried wings"},
+        {"name": "Pasta Alfredo", "price": 180, "is_veg": True, "prep_time": 15, "description": "Creamy white sauce pasta"},
+    ],
+    "street_food": [
+        {"name": "Pani Puri", "price": 60, "is_veg": True, "prep_time": 5, "description": "Crispy shells with spiced water"},
+        {"name": "Bhel Puri", "price": 70, "is_veg": True, "prep_time": 5, "description": "Puffed rice snack"},
+        {"name": "Pav Bhaji", "price": 120, "is_veg": True, "prep_time": 15, "description": "Spiced vegetable mash with bread"},
+        {"name": "Vada Pav", "price": 40, "is_veg": True, "prep_time": 8, "description": "Mumbai's favorite snack"},
+        {"name": "Samosa", "price": 30, "is_veg": True, "prep_time": 10, "description": "Crispy potato-filled pastry"},
+        {"name": "Chole Tikki", "price": 80, "is_veg": True, "prep_time": 12, "description": "Potato patty with chickpeas"},
+    ],
+    "bakery": [
+        {"name": "Chocolate Cake", "price": 150, "is_veg": True, "prep_time": 5, "description": "Rich chocolate slice"},
+        {"name": "Croissant", "price": 80, "is_veg": True, "prep_time": 3, "description": "Buttery flaky pastry"},
+        {"name": "Brownie", "price": 100, "is_veg": True, "prep_time": 3, "description": "Fudgy chocolate brownie"},
+        {"name": "Cold Coffee", "price": 120, "is_veg": True, "prep_time": 5, "description": "Chilled coffee with ice cream"},
+        {"name": "Sandwich", "price": 100, "is_veg": True, "prep_time": 8, "description": "Grilled vegetable sandwich"},
+        {"name": "Cookies", "price": 60, "is_veg": True, "prep_time": 2, "description": "Fresh baked cookies"},
+    ]
+}
+
+RESTAURANT_AMENITIES = [
+    {"name": "Free WiFi", "icon": "wifi"},
+    {"name": "Parking", "icon": "car"},
+    {"name": "Air Conditioning", "icon": "wind"},
+    {"name": "Outdoor Seating", "icon": "sun"},
+    {"name": "Live Music", "icon": "music"},
+    {"name": "Private Dining", "icon": "lock"},
+    {"name": "Wheelchair Accessible", "icon": "accessibility"},
+    {"name": "Kids Play Area", "icon": "baby"},
+    {"name": "Valet Parking", "icon": "key"},
+    {"name": "Rooftop", "icon": "cloud"},
+    {"name": "Party Hall", "icon": "party-popper"},
+    {"name": "Buffet", "icon": "utensils"},
+]
+
+
+@restaurant_router.get("/cities")
+async def get_restaurant_cities(db: Session = Depends(get_db)):
+    """Get all cities with restaurants"""
+    cities = db.query(
+        RestaurantModel.city,
+        func.count(RestaurantModel.id).label('count')
+    ).filter(
+        RestaurantModel.is_active == 1
+    ).group_by(
+        RestaurantModel.city
+    ).order_by(
+        func.count(RestaurantModel.id).desc()
+    ).all()
+    
+    return [{"city": c[0], "restaurant_count": c[1]} for c in cities]
+
+
+@restaurant_router.get("/popular-cities")
+async def get_popular_cities(limit: int = 12, db: Session = Depends(get_db)):
+    """Get popular cities for restaurants"""
+    cities = db.query(
+        RestaurantModel.city,
+        func.count(RestaurantModel.id).label('count')
+    ).filter(
+        RestaurantModel.is_active == 1
+    ).group_by(
+        RestaurantModel.city
+    ).order_by(
+        func.count(RestaurantModel.id).desc()
+    ).limit(limit).all()
+    
+    city_images = {
+        "Kolkata": "https://images.unsplash.com/photo-1558431382-27e303142255?w=400&q=80",
+        "Mumbai": "https://images.unsplash.com/photo-1570168007204-dfb528c6958f?w=400&q=80",
+        "Delhi": "https://images.unsplash.com/photo-1587474260584-136574528ed5?w=400&q=80",
+        "Chennai": "https://images.unsplash.com/photo-1582510003544-4d00b7f74220?w=400&q=80",
+        "Bangalore": "https://images.unsplash.com/photo-1596176530529-78163a4f7af2?w=400&q=80",
+        "Hyderabad": "https://images.unsplash.com/photo-1572445271230-a8a90d2b6405?w=400&q=80",
+        "Pune": "https://images.unsplash.com/photo-1567157577867-05ccb1388e66?w=400&q=80",
+        "Jaipur": "https://images.unsplash.com/photo-1477587458883-47145ed94245?w=400&q=80",
+        "Lucknow": "https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=400&q=80",
+        "Ahmedabad": "https://images.unsplash.com/photo-1569154941061-e231b4725ef1?w=400&q=80"
+    }
+    
+    return [{
+        "city": c[0],
+        "restaurant_count": c[1],
+        "image": city_images.get(c[0], f"https://source.unsplash.com/400x300/?{c[0]},india,city")
+    } for c in cities]
+
+
+@restaurant_router.get("/featured")
+async def get_featured_restaurants(city: Optional[str] = None, limit: int = 8, db: Session = Depends(get_db)):
+    """Get featured/trending restaurants"""
+    query = db.query(RestaurantModel).filter(
+        RestaurantModel.is_active == 1,
+        RestaurantModel.is_featured == 1
+    )
+    
+    if city:
+        query = query.filter(RestaurantModel.city.ilike(f"%{city}%"))
+    
+    restaurants = query.order_by(RestaurantModel.rating.desc()).limit(limit).all()
+    
+    return [{
+        "id": r.id,
+        "name": r.name,
+        "city": r.city,
+        "cuisines": r.cuisines or [],
+        "rating": r.rating,
+        "price_for_two": r.price_for_two,
+        "is_pure_veg": bool(r.is_pure_veg),
+        "cover_image": r.cover_image or RESTAURANT_IMAGES[r.id % len(RESTAURANT_IMAGES)],
+        "is_trending": bool(r.is_trending)
+    } for r in restaurants]
+
+
+@restaurant_router.get("/popular")
+async def get_popular_restaurants(city: Optional[str] = None, limit: int = 12, db: Session = Depends(get_db)):
+    """Get popular restaurants - alias for featured"""
+    query = db.query(RestaurantModel).filter(
+        RestaurantModel.is_active == 1
+    )
+    
+    if city:
+        query = query.filter(RestaurantModel.city.ilike(f"%{city}%"))
+    
+    # Get top rated restaurants
+    restaurants = query.order_by(RestaurantModel.rating.desc()).limit(limit).all()
+    
+    return {
+        "restaurants": [{
+            "id": r.id,
+            "name": r.name,
+            "city": r.city,
+            "cuisines": r.cuisines,
+            "rating": r.rating,
+            "price_for_two": r.price_for_two,
+            "is_pure_veg": bool(r.is_pure_veg),
+            "cover_image": r.cover_image or RESTAURANT_IMAGES[r.id % len(RESTAURANT_IMAGES)],
+            "is_trending": bool(r.is_trending),
+            "address": r.address
+        } for r in restaurants]
+    }
+
+
+@restaurant_router.post("/search")
+async def search_restaurants(request: RestaurantSearchRequest, db: Session = Depends(get_db)):
+    """Search restaurants with filters"""
+    query = db.query(RestaurantModel).filter(
+        RestaurantModel.is_active == 1,
+        RestaurantModel.city.ilike(f"%{request.city}%")
+    )
+    
+    # Apply filters
+    if request.cuisines:
+        # Filter by cuisines (JSON array contains)
+        for cuisine in request.cuisines:
+            query = query.filter(RestaurantModel.cuisines.contains(cuisine))
+    
+    if request.is_pure_veg is not None:
+        query = query.filter(RestaurantModel.is_pure_veg == (1 if request.is_pure_veg else 0))
+    
+    if request.has_bar is not None:
+        query = query.filter(RestaurantModel.has_bar == (1 if request.has_bar else 0))
+    
+    if request.price_category:
+        query = query.filter(RestaurantModel.price_category == request.price_category)
+    
+    if request.min_rating:
+        query = query.filter(RestaurantModel.rating >= request.min_rating)
+    
+    if request.has_outdoor_seating is not None:
+        query = query.filter(RestaurantModel.has_outdoor_seating == (1 if request.has_outdoor_seating else 0))
+    
+    if request.has_ac is not None:
+        query = query.filter(RestaurantModel.has_ac == (1 if request.has_ac else 0))
+    
+    # Sorting
+    if request.sort_by == "rating":
+        query = query.order_by(RestaurantModel.rating.desc())
+    elif request.sort_by == "price_low":
+        query = query.order_by(RestaurantModel.price_for_two.asc())
+    elif request.sort_by == "price_high":
+        query = query.order_by(RestaurantModel.price_for_two.desc())
+    else:
+        query = query.order_by(RestaurantModel.popularity_score.desc(), RestaurantModel.rating.desc())
+    
+    # Get total count
+    total = query.count()
+    
+    # Pagination
+    offset = (request.page - 1) * request.limit
+    restaurants = query.offset(offset).limit(request.limit).all()
+    
+    return {
+        "total": total,
+        "page": request.page,
+        "limit": request.limit,
+        "total_pages": (total + request.limit - 1) // request.limit,
+        "restaurants": [{
+            "id": r.id,
+            "name": r.name,
+            "slug": r.slug,
+            "city": r.city,
+            "locality": r.locality,
+            "address": r.address,
+            "cuisines": r.cuisines or [],
+            "restaurant_type": r.restaurant_type,
+            "rating": r.rating,
+            "total_reviews": r.total_reviews,
+            "price_for_two": r.price_for_two,
+            "price_category": r.price_category,
+            "is_pure_veg": bool(r.is_pure_veg),
+            "has_bar": bool(r.has_bar),
+            "is_family_friendly": bool(r.is_family_friendly),
+            "has_outdoor_seating": bool(r.has_outdoor_seating),
+            "has_ac": bool(r.has_ac),
+            "has_delivery": bool(r.has_delivery),
+            "avg_delivery_time": r.avg_delivery_time,
+            "opening_time": r.opening_time,
+            "closing_time": r.closing_time,
+            "is_open_now": bool(r.is_open_now),
+            "cover_image": r.cover_image or RESTAURANT_IMAGES[r.id % len(RESTAURANT_IMAGES)],
+            "images": r.images or [RESTAURANT_IMAGES[(r.id + i) % len(RESTAURANT_IMAGES)] for i in range(4)],
+            "amenities": [a.get("name", a) if isinstance(a, dict) else a for a in (r.amenities or [])],
+            "is_featured": bool(r.is_featured),
+            "is_trending": bool(r.is_trending)
+        } for r in restaurants]
+    }
+
+
+@restaurant_router.get("/{restaurant_id}")
+async def get_restaurant_detail(restaurant_id: int, db: Session = Depends(get_db)):
+    """Get restaurant details"""
+    restaurant = db.query(RestaurantModel).filter(
+        RestaurantModel.id == restaurant_id,
+        RestaurantModel.is_active == 1
+    ).first()
+    
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    
+    return {
+        "id": restaurant.id,
+        "name": restaurant.name,
+        "slug": restaurant.slug,
+        "description": restaurant.description,
+        "city": restaurant.city,
+        "locality": restaurant.locality,
+        "address": restaurant.address,
+        "latitude": restaurant.latitude,
+        "longitude": restaurant.longitude,
+        "cuisines": restaurant.cuisines or [],
+        "restaurant_type": restaurant.restaurant_type,
+        "rating": restaurant.rating,
+        "total_reviews": restaurant.total_reviews,
+        "food_rating": restaurant.food_rating,
+        "service_rating": restaurant.service_rating,
+        "ambience_rating": restaurant.ambience_rating,
+        "price_for_two": restaurant.price_for_two,
+        "price_category": restaurant.price_category,
+        "is_pure_veg": bool(restaurant.is_pure_veg),
+        "has_bar": bool(restaurant.has_bar),
+        "is_family_friendly": bool(restaurant.is_family_friendly),
+        "has_outdoor_seating": bool(restaurant.has_outdoor_seating),
+        "has_ac": bool(restaurant.has_ac),
+        "has_wifi": bool(restaurant.has_wifi),
+        "has_parking": bool(restaurant.has_parking),
+        "accepts_reservations": bool(restaurant.accepts_reservations),
+        "has_live_music": bool(restaurant.has_live_music),
+        "has_private_dining": bool(restaurant.has_private_dining),
+        "has_delivery": bool(restaurant.has_delivery),
+        "has_takeaway": bool(restaurant.has_takeaway),
+        "avg_delivery_time": restaurant.avg_delivery_time,
+        "opening_time": restaurant.opening_time,
+        "closing_time": restaurant.closing_time,
+        "is_open_now": bool(restaurant.is_open_now),
+        "weekly_off": restaurant.weekly_off,
+        "images": restaurant.images or [{"url": RESTAURANT_IMAGES[(restaurant.id + i) % len(RESTAURANT_IMAGES)], "caption": f"Restaurant view {i+1}"} for i in range(6)],
+        "logo_url": restaurant.logo_url,
+        "cover_image": restaurant.cover_image or RESTAURANT_IMAGES[restaurant.id % len(RESTAURANT_IMAGES)],
+        "phone": restaurant.phone,
+        "email": restaurant.email,
+        "website": restaurant.website,
+        "amenities": restaurant.amenities or RESTAURANT_AMENITIES[:6],
+        "is_featured": bool(restaurant.is_featured),
+        "is_trending": bool(restaurant.is_trending)
+    }
+
+
+@restaurant_router.get("/{restaurant_id}/tables")
+async def get_restaurant_tables(restaurant_id: int, db: Session = Depends(get_db)):
+    """Get restaurant tables"""
+    tables = db.query(RestaurantTableModel).filter(
+        RestaurantTableModel.restaurant_id == restaurant_id,
+        RestaurantTableModel.is_active == 1
+    ).all()
+    
+    return {
+        "tables": [{
+            "id": t.id,
+            "table_number": t.table_number,
+            "capacity": t.capacity,
+            "table_type": t.table_type,
+            "seating_type": t.seating_type,
+            "is_ac": bool(t.is_ac),
+            "floor": t.floor,
+            "description": t.description,
+            "min_booking_amount": t.min_booking_amount
+        } for t in tables]
+    }
+
+
+@restaurant_router.get("/{restaurant_id}/time-slots")
+async def get_time_slots(restaurant_id: int, date: str, db: Session = Depends(get_db)):
+    """Get available time slots for a date"""
+    restaurant = db.query(RestaurantModel).filter(RestaurantModel.id == restaurant_id).first()
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    
+    # Generate time slots based on restaurant hours
+    slots = []
+    opening = int(restaurant.opening_time.split(":")[0])
+    closing = int(restaurant.closing_time.split(":")[0])
+    
+    for hour in range(opening, closing):
+        for minute in ["00", "30"]:
+            slot_time = f"{hour:02d}:{minute}"
+            is_peak = (12 <= hour <= 14) or (19 <= hour <= 22)
+            
+            slots.append({
+                "slot_time": slot_time,
+                "slot_type": "lunch" if hour < 16 else "dinner",
+                "is_peak_hour": is_peak,
+                "peak_hour_charge_percent": 15 if is_peak else 0,
+                "is_available": True,
+                "available_tables": random.randint(3, 10)
+            })
+    
+    return {"date": date, "slots": slots}
+
+
+@restaurant_router.get("/{restaurant_id}/menu")
+async def get_restaurant_menu(restaurant_id: int, db: Session = Depends(get_db)):
+    """Get restaurant menu"""
+    restaurant = db.query(RestaurantModel).filter(RestaurantModel.id == restaurant_id).first()
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    
+    # Get menu items
+    items = db.query(MenuItemModel).filter(
+        MenuItemModel.restaurant_id == restaurant_id,
+        MenuItemModel.is_active == 1
+    ).all()
+    
+    # Get categories
+    categories = db.query(MenuCategoryModel).filter(
+        MenuCategoryModel.restaurant_id == restaurant_id,
+        MenuCategoryModel.is_active == 1
+    ).order_by(MenuCategoryModel.display_order).all()
+    
+    # Group items by category
+    menu = []
+    for cat in categories:
+        cat_items = [i for i in items if i.category_id == cat.id]
+        menu.append({
+            "category": {
+                "id": cat.id,
+                "name": cat.name,
+                "description": cat.description,
+                "image_url": cat.image_url
+            },
+            "items": [{
+                "id": item.id,
+                "name": item.name,
+                "description": item.description,
+                "price": item.price,
+                "discounted_price": item.discounted_price,
+                "is_veg": bool(item.is_veg),
+                "is_bestseller": bool(item.is_bestseller),
+                "is_chef_special": bool(item.is_chef_special),
+                "is_new": bool(item.is_new),
+                "spice_level": item.spice_level,
+                "prep_time_mins": item.prep_time_mins,
+                "serves": item.serves,
+                "image_url": item.image_url,
+                "available_for_preorder": bool(item.available_for_preorder),
+                "is_available": bool(item.is_available)
+            } for item in cat_items]
+        })
+    
+    return {"menu": menu}
+
+
+@restaurant_router.post("/book")
+async def book_table(
+    booking: TableBookingCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Book a table at restaurant"""
+    restaurant = db.query(RestaurantModel).filter(RestaurantModel.id == booking.restaurant_id).first()
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    
+    # Generate booking reference
+    booking_ref = f"RB{datetime.now().strftime('%Y%m%d')}{random.randint(10000, 99999)}"
+    
+    # Calculate pricing
+    base_amount = 200 if booking.guests_count <= 2 else 100 * booking.guests_count  # Cover charge
+    
+    # Check if peak hour
+    hour = int(booking.time_slot.split(":")[0])
+    is_peak = (12 <= hour <= 14) or (19 <= hour <= 22)
+    peak_charge = base_amount * 0.15 if is_peak else 0
+    
+    service_charge = (base_amount + peak_charge) * 0.05
+    gst = (base_amount + peak_charge + service_charge) * 0.05
+    total = base_amount + peak_charge + service_charge + gst
+    
+    # Generate QR code
+    qr_data = f"WANDERLITE-REST-{booking_ref}"
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    qr_img.save(buffer, format='PNG')
+    qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+    
+    # Create booking
+    new_booking = RestaurantBookingModel(
+        booking_reference=booking_ref,
+        user_id=current_user.id,
+        restaurant_id=booking.restaurant_id,
+        booking_date=datetime.strptime(booking.booking_date, "%Y-%m-%d").date(),
+        time_slot=booking.time_slot,
+        guests_count=booking.guests_count,
+        table_id=booking.table_id,
+        seating_preference=booking.seating_preference,
+        guest_name=booking.guest_name,
+        guest_phone=booking.guest_phone,
+        guest_email=booking.guest_email,
+        special_requests=booking.special_requests,
+        occasion=booking.occasion,
+        base_amount=base_amount,
+        peak_hour_charge=peak_charge,
+        service_charge=service_charge,
+        gst=gst,
+        total_amount=total,
+        payment_method=booking.payment_method or "pay_at_restaurant",
+        payment_status="pending" if booking.payment_method == "pay_at_restaurant" else "paid",
+        booking_status="confirmed",
+        qr_code=qr_base64
+    )
+    
+    db.add(new_booking)
+    db.commit()
+    db.refresh(new_booking)
+    
+    return {
+        "booking": {
+            "id": new_booking.id,
+            "booking_reference": booking_ref,
+            "restaurant_id": restaurant.id,
+            "restaurant_name": restaurant.name,
+            "restaurant_address": restaurant.address,
+            "restaurant_phone": restaurant.phone,
+            "booking_date": booking.booking_date,
+            "time_slot": booking.time_slot,
+            "guests_count": booking.guests_count,
+            "guest_name": booking.guest_name,
+            "guest_phone": booking.guest_phone,
+            "guest_email": booking.guest_email,
+            "special_requests": booking.special_requests,
+            "occasion": booking.occasion,
+            "base_amount": base_amount,
+            "peak_hour_charge": peak_charge,
+            "service_charge": service_charge,
+            "gst": gst,
+            "total_amount": total,
+            "payment_status": new_booking.payment_status,
+            "payment_method": new_booking.payment_method,
+            "booking_status": "confirmed",
+            "qr_code": qr_base64,
+            "created_at": new_booking.created_at.isoformat()
+        }
+    }
+
+
+@restaurant_router.post("/pre-order")
+async def create_pre_order(
+    order: PreOrderCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a pre-order for food"""
+    restaurant = db.query(RestaurantModel).filter(RestaurantModel.id == order.restaurant_id).first()
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    
+    # Generate order reference
+    order_ref = f"PO{datetime.now().strftime('%Y%m%d')}{random.randint(10000, 99999)}"
+    
+    # Calculate totals
+    subtotal = 0
+    items_list = []
+    max_prep_time = 0
+    
+    for item_order in order.items:
+        item = db.query(MenuItemModel).filter(MenuItemModel.id == item_order.get("item_id")).first()
+        if item:
+            item_total = item.price * item_order.get("quantity", 1)
+            subtotal += item_total
+            max_prep_time = max(max_prep_time, item.prep_time_mins)
+            items_list.append({
+                "item_id": item.id,
+                "name": item.name,
+                "quantity": item_order.get("quantity", 1),
+                "price": item.price,
+                "total": item_total,
+                "is_veg": bool(item.is_veg)
+            })
+    
+    gst = subtotal * 0.05
+    packaging = 30 if subtotal > 0 else 0
+    total = subtotal + gst + packaging
+    
+    # Calculate ready time
+    arrival_dt = datetime.strptime(f"{order.order_date} {order.arrival_time}", "%Y-%m-%d %H:%M")
+    ready_dt = arrival_dt - timedelta(minutes=5)
+    
+    # Generate QR code
+    qr_data = f"WANDERLITE-PREORDER-{order_ref}"
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    qr_img.save(buffer, format='PNG')
+    qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+    
+    # Create pre-order
+    new_order = PreOrderModel(
+        order_reference=order_ref,
+        user_id=current_user.id,
+        restaurant_id=order.restaurant_id,
+        booking_id=order.booking_id,
+        order_date=datetime.strptime(order.order_date, "%Y-%m-%d").date(),
+        arrival_time=order.arrival_time,
+        guests_count=order.guests_count,
+        guest_name=order.guest_name,
+        guest_phone=order.guest_phone,
+        special_instructions=order.special_instructions,
+        items=items_list,
+        estimated_prep_time=max_prep_time,
+        ready_by_time=ready_dt.strftime("%H:%M"),
+        subtotal=subtotal,
+        gst=gst,
+        packaging_charge=packaging,
+        total_amount=total,
+        payment_method=order.payment_method or "pay_at_restaurant",
+        payment_status="pending",
+        order_status="confirmed",
+        qr_code=qr_base64
+    )
+    
+    db.add(new_order)
+    db.commit()
+    db.refresh(new_order)
+    
+    return {
+        "id": new_order.id,
+        "order_reference": order_ref,
+        "restaurant_id": restaurant.id,
+        "restaurant_name": restaurant.name,
+        "order_date": order.order_date,
+        "arrival_time": order.arrival_time,
+        "guests_count": order.guests_count,
+        "guest_name": order.guest_name,
+        "items": items_list,
+        "estimated_prep_time": max_prep_time,
+        "ready_by_time": ready_dt.strftime("%H:%M"),
+        "subtotal": subtotal,
+        "gst": gst,
+        "packaging_charge": packaging,
+        "total_amount": total,
+        "payment_status": "pending",
+        "order_status": "confirmed",
+        "qr_code": qr_base64,
+        "created_at": new_order.created_at.isoformat()
+    }
+
+
+@restaurant_router.post("/queue/join")
+async def join_queue(
+    request: JoinQueueRequest,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Join restaurant waiting queue"""
+    restaurant = db.query(RestaurantModel).filter(RestaurantModel.id == request.restaurant_id).first()
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    
+    today = datetime.now().date()
+    
+    # Get current queue position
+    last_queue = db.query(RestaurantQueueModel).filter(
+        RestaurantQueueModel.restaurant_id == request.restaurant_id,
+        RestaurantQueueModel.queue_date == today,
+        RestaurantQueueModel.status == "waiting"
+    ).order_by(RestaurantQueueModel.position.desc()).first()
+    
+    position = (last_queue.position + 1) if last_queue else 1
+    queue_number = f"Q{position:03d}"
+    
+    # Estimate wait time (15 mins per party ahead)
+    wait_time = position * 15
+    
+    # Generate QR code
+    qr_data = f"WANDERLITE-QUEUE-{queue_number}-{today}"
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    qr_img.save(buffer, format='PNG')
+    qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+    
+    # Create queue entry
+    queue_entry = RestaurantQueueModel(
+        queue_number=queue_number,
+        user_id=current_user.id,
+        restaurant_id=request.restaurant_id,
+        queue_date=today,
+        guests_count=request.guests_count,
+        guest_name=request.guest_name,
+        guest_phone=request.guest_phone,
+        position=position,
+        estimated_wait_mins=wait_time,
+        status="waiting",
+        qr_code=qr_base64
+    )
+    
+    db.add(queue_entry)
+    db.commit()
+    db.refresh(queue_entry)
+    
+    return {
+        "id": queue_entry.id,
+        "queue_number": queue_number,
+        "restaurant_id": restaurant.id,
+        "restaurant_name": restaurant.name,
+        "queue_date": today.isoformat(),
+        "join_time": queue_entry.join_time.isoformat(),
+        "guests_count": request.guests_count,
+        "guest_name": request.guest_name,
+        "position": position,
+        "people_ahead": position - 1,
+        "estimated_wait_mins": wait_time,
+        "status": "waiting",
+        "qr_code": qr_base64
+    }
+
+
+@restaurant_router.get("/queue/{queue_id}/status")
+async def get_queue_status(queue_id: int, db: Session = Depends(get_db)):
+    """Get queue status and position"""
+    queue = db.query(RestaurantQueueModel).filter(RestaurantQueueModel.id == queue_id).first()
+    if not queue:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+    
+    restaurant = db.query(RestaurantModel).filter(RestaurantModel.id == queue.restaurant_id).first()
+    
+    # Calculate current position
+    ahead = db.query(RestaurantQueueModel).filter(
+        RestaurantQueueModel.restaurant_id == queue.restaurant_id,
+        RestaurantQueueModel.queue_date == queue.queue_date,
+        RestaurantQueueModel.status == "waiting",
+        RestaurantQueueModel.position < queue.position
+    ).count()
+    
+    return {
+        "id": queue.id,
+        "queue_number": queue.queue_number,
+        "restaurant_name": restaurant.name if restaurant else "Unknown",
+        "position": ahead + 1,
+        "people_ahead": ahead,
+        "estimated_wait_mins": ahead * 15,
+        "status": queue.status,
+        "join_time": queue.join_time.isoformat()
+    }
+
+
+@restaurant_router.post("/queue/{queue_id}/leave")
+async def leave_queue(
+    queue_id: int,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Leave the waiting queue"""
+    queue = db.query(RestaurantQueueModel).filter(
+        RestaurantQueueModel.id == queue_id,
+        RestaurantQueueModel.user_id == current_user.id
+    ).first()
+    
+    if not queue:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+    
+    queue.status = "left"
+    queue.left_at = datetime.utcnow()
+    db.commit()
+    
+    return {"message": "Successfully left the queue", "queue_number": queue.queue_number}
+
+
+@restaurant_router.get("/booking/{booking_ref}")
+async def get_restaurant_booking_by_ref(
+    booking_ref: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a restaurant booking by booking reference"""
+    booking = db.query(RestaurantBookingModel).filter(
+        RestaurantBookingModel.booking_reference == booking_ref,
+        RestaurantBookingModel.user_id == current_user.id
+    ).first()
+    
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    restaurant = db.query(RestaurantModel).filter(RestaurantModel.id == booking.restaurant_id).first()
+    table = db.query(RestaurantTableModel).filter(RestaurantTableModel.id == booking.table_id).first() if booking.table_id else None
+    
+    # Get pre-order items if any
+    pre_order_items = []
+    if booking.pre_order_id:
+        pre_order = db.query(RestaurantPreOrderModel).filter(RestaurantPreOrderModel.id == booking.pre_order_id).first()
+        if pre_order:
+            items = db.query(RestaurantPreOrderItemModel).filter(
+                RestaurantPreOrderItemModel.pre_order_id == pre_order.id
+            ).all()
+            for item in items:
+                menu_item = db.query(MenuItemModel).filter(MenuItemModel.id == item.menu_item_id).first()
+                pre_order_items.append({
+                    "id": item.id,
+                    "name": menu_item.name if menu_item else "Unknown Item",
+                    "quantity": item.quantity,
+                    "price": item.unit_price,
+                    "total": item.total_price
+                })
+    
+    return {
+        "booking": {
+            "id": booking.id,
+            "booking_reference": booking.booking_reference,
+            "restaurant_id": booking.restaurant_id,
+            "restaurant_name": restaurant.name if restaurant else "Unknown",
+            "restaurant_city": restaurant.city if restaurant else "",
+            "restaurant_address": restaurant.address if restaurant else "",
+            "restaurant_cuisines": restaurant.cuisines if restaurant else "",
+            "restaurant_rating": restaurant.rating if restaurant else 4.0,
+            "booking_date": booking.booking_date.isoformat(),
+            "time_slot": booking.time_slot,
+            "guests_count": booking.guests_count,
+            "table_number": table.table_number if table else None,
+            "table_capacity": table.capacity if table else None,
+            "table_type": table.table_type if table else None,
+            "seating_preference": booking.seating_preference,
+            "guest_name": booking.guest_name,
+            "guest_email": booking.guest_email,
+            "guest_phone": booking.guest_phone,
+            "special_requests": booking.special_requests,
+            "occasion": booking.occasion,
+            "total_amount": booking.total_amount,
+            "booking_status": booking.booking_status,
+            "payment_status": booking.payment_status,
+            "qr_code": booking.qr_code,
+            "pre_order_items": pre_order_items,
+            "created_at": booking.created_at.isoformat()
+        }
+    }
+
+
+@restaurant_router.get("/my-bookings")
+async def get_my_bookings(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get user's restaurant bookings"""
+    bookings = db.query(RestaurantBookingModel).filter(
+        RestaurantBookingModel.user_id == current_user.id
+    ).order_by(RestaurantBookingModel.created_at.desc()).all()
+    
+    result = []
+    for b in bookings:
+        restaurant = db.query(RestaurantModel).filter(RestaurantModel.id == b.restaurant_id).first()
+        result.append({
+            "id": b.id,
+            "booking_reference": b.booking_reference,
+            "restaurant_name": restaurant.name if restaurant else "Unknown",
+            "restaurant_image": restaurant.cover_image if restaurant else None,
+            "booking_date": b.booking_date.isoformat(),
+            "time_slot": b.time_slot,
+            "guests_count": b.guests_count,
+            "total_amount": b.total_amount,
+            "booking_status": b.booking_status,
+            "payment_status": b.payment_status,
+            "created_at": b.created_at.isoformat()
+        })
+    
+    return {"bookings": result}
+
+
+@restaurant_router.get("/{restaurant_id}/reviews")
+async def get_restaurant_reviews(restaurant_id: int, page: int = 1, limit: int = 10, db: Session = Depends(get_db)):
+    """Get restaurant reviews"""
+    offset = (page - 1) * limit
+    
+    reviews = db.query(RestaurantReviewModel).filter(
+        RestaurantReviewModel.restaurant_id == restaurant_id,
+        RestaurantReviewModel.is_active == 1
+    ).order_by(RestaurantReviewModel.created_at.desc()).offset(offset).limit(limit).all()
+    
+    total = db.query(RestaurantReviewModel).filter(
+        RestaurantReviewModel.restaurant_id == restaurant_id,
+        RestaurantReviewModel.is_active == 1
+    ).count()
+    
+    result = []
+    for r in reviews:
+        user = db.query(UserModel).filter(UserModel.id == r.user_id).first()
+        result.append({
+            "id": r.id,
+            "user_name": user.name if user else "Anonymous",
+            "overall_rating": r.overall_rating,
+            "food_rating": r.food_rating,
+            "service_rating": r.service_rating,
+            "ambience_rating": r.ambience_rating,
+            "title": r.title,
+            "review_text": r.review_text,
+            "dining_type": r.dining_type,
+            "visit_type": r.visit_type,
+            "images": r.images or [],
+            "is_verified": bool(r.is_verified),
+            "helpful_count": r.helpful_count,
+            "created_at": r.created_at.isoformat()
+        })
+    
+    return {
+        "total": total,
+        "page": page,
+        "reviews": result
+    }
+
+
+@restaurant_router.post("/seed")
+async def seed_restaurants(db: Session = Depends(get_db)):
+    """Seed restaurant data from CSV dataset"""
+    import pandas as pd
+    
+    csv_path = os.path.join(os.path.dirname(__file__), "restaurants_dataset.csv")
+    if not os.path.exists(csv_path):
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+    
+    df = pd.read_csv(csv_path)
+    
+    # Clear existing data
+    db.query(MenuItemModel).delete()
+    db.query(MenuCategoryModel).delete()
+    db.query(RestaurantTableModel).delete()
+    db.query(RestaurantModel).delete()
+    db.commit()
+    
+    restaurants_created = 0
+    tables_created = 0
+    menu_items_created = 0
+    
+    # Limit to 5000 restaurants for performance
+    df = df.head(5000)
+    
+    for idx, row in df.iterrows():
+        try:
+            # Determine cuisines from flags
+            cuisines = []
+            if row.get('south_indian_or_not') == 1:
+                cuisines.append("South Indian")
+            if row.get('north_indian_or_not') == 1:
+                cuisines.append("North Indian")
+            if row.get('biryani_or_not') == 1:
+                cuisines.append("Biryani")
+            if row.get('fast_food_or_not') == 1:
+                cuisines.append("Fast Food")
+            if row.get('street_food') == 1:
+                cuisines.append("Street Food")
+            if row.get('bakery_or_not') == 1:
+                cuisines.append("Bakery")
+            
+            if not cuisines:
+                cuisines = ["Multi-Cuisine"]
+            
+            # Determine price category
+            price = row.get('average_price', 200)
+            if price < 150:
+                price_cat = "budget"
+            elif price < 400:
+                price_cat = "moderate"
+            elif price < 800:
+                price_cat = "expensive"
+            else:
+                price_cat = "premium"
+            
+            # Determine restaurant type
+            if "Bakery" in cuisines:
+                rest_type = "Cafe"
+            elif "Fast Food" in cuisines:
+                rest_type = "Quick Service"
+            elif "Street Food" in cuisines:
+                rest_type = "Street Food"
+            elif price > 500:
+                rest_type = "Fine Dining"
+            else:
+                rest_type = "Casual Dining"
+            
+            # Generate amenities
+            amenities = random.sample(RESTAURANT_AMENITIES, random.randint(3, 7))
+            
+            # Create restaurant
+            restaurant = RestaurantModel(
+                name=row['restaurant_name'],
+                slug=row['restaurant_name'].lower().replace(' ', '-').replace("'", "")[:50],
+                description=f"A popular {', '.join(cuisines[:2])} restaurant in {row['location']}",
+                city=row['location'],
+                locality=f"{row['location']} Central",
+                address=f"123, Main Road, {row['location']}",
+                latitude=random.uniform(8.0, 35.0),
+                longitude=random.uniform(68.0, 97.0),
+                cuisines=cuisines,
+                restaurant_type=rest_type,
+                rating=min(float(row.get('rating', 4.0)), 5.0),
+                total_reviews=random.randint(50, 500),
+                food_rating=min(float(row.get('rating', 4.0)) + random.uniform(-0.2, 0.2), 5.0),
+                service_rating=min(float(row.get('rating', 4.0)) + random.uniform(-0.3, 0.3), 5.0),
+                ambience_rating=min(float(row.get('rating', 4.0)) + random.uniform(-0.2, 0.2), 5.0),
+                price_for_two=int(price * 2),
+                price_category=price_cat,
+                is_pure_veg=1 if row.get('south_indian_or_not') == 1 and row.get('biryani_or_not') == 0 else random.randint(0, 1),
+                has_bar=1 if price > 400 and random.random() > 0.5 else 0,
+                is_family_friendly=1,
+                has_outdoor_seating=random.randint(0, 1),
+                has_ac=1 if price > 200 else random.randint(0, 1),
+                has_wifi=random.randint(0, 1),
+                has_parking=random.randint(0, 1),
+                accepts_reservations=1,
+                has_live_music=1 if price > 500 and random.random() > 0.7 else 0,
+                has_private_dining=1 if price > 400 and random.random() > 0.6 else 0,
+                has_delivery=1,
+                has_takeaway=1,
+                avg_delivery_time=int(row.get('average _delivery_time', 30)),
+                opening_time="09:00" if "Bakery" in cuisines else "11:00",
+                closing_time="22:00" if "Bakery" in cuisines else "23:00",
+                is_open_now=1,
+                images=[{"url": RESTAURANT_IMAGES[(idx + i) % len(RESTAURANT_IMAGES)], "caption": f"View {i+1}"} for i in range(5)],
+                cover_image=RESTAURANT_IMAGES[idx % len(RESTAURANT_IMAGES)],
+                phone=f"+91 {random.randint(7000000000, 9999999999)}",
+                email=f"info@{row['restaurant_name'].lower().replace(' ', '')[:10]}.com",
+                amenities=amenities,
+                popularity_score=random.randint(50, 100),
+                is_featured=1 if random.random() > 0.9 else 0,
+                is_trending=1 if random.random() > 0.85 else 0
+            )
+            
+            db.add(restaurant)
+            db.flush()
+            restaurants_created += 1
+            
+            # Create tables (3-8 per restaurant)
+            for t in range(random.randint(3, 8)):
+                table_types = ["standard", "booth", "window", "private"]
+                seating_types = ["indoor", "outdoor"] if restaurant.has_outdoor_seating else ["indoor"]
+                
+                table = RestaurantTableModel(
+                    restaurant_id=restaurant.id,
+                    table_number=f"T{t+1}",
+                    capacity=random.choice([2, 4, 4, 6, 8]),
+                    table_type=random.choice(table_types),
+                    seating_type=random.choice(seating_types),
+                    is_ac=1 if restaurant.has_ac else 0,
+                    floor=random.randint(0, 1),
+                    min_booking_amount=0
+                )
+                db.add(table)
+                tables_created += 1
+            
+            # Create menu categories and items
+            for cuisine_key, items in MENU_ITEMS_BY_CUISINE.items():
+                # Check if cuisine matches restaurant
+                cuisine_map = {
+                    "south_indian": "South Indian",
+                    "north_indian": "North Indian",
+                    "biryani": "Biryani",
+                    "fast_food": "Fast Food",
+                    "street_food": "Street Food",
+                    "bakery": "Bakery"
+                }
+                
+                if cuisine_map.get(cuisine_key) in cuisines or cuisines == ["Multi-Cuisine"]:
+                    # Create category
+                    category = MenuCategoryModel(
+                        restaurant_id=restaurant.id,
+                        name=cuisine_map.get(cuisine_key, cuisine_key.replace("_", " ").title()),
+                        description=f"Delicious {cuisine_map.get(cuisine_key, cuisine_key)} dishes",
+                        display_order=list(MENU_ITEMS_BY_CUISINE.keys()).index(cuisine_key)
+                    )
+                    db.add(category)
+                    db.flush()
+                    
+                    # Add items
+                    for item_data in items:
+                        # Get image
+                        images = FOOD_IMAGES.get(cuisine_key, FOOD_IMAGES["north_indian"])
+                        
+                        item = MenuItemModel(
+                            restaurant_id=restaurant.id,
+                            category_id=category.id,
+                            name=item_data["name"],
+                            description=item_data.get("description", ""),
+                            price=item_data["price"] * (1 + (price - 200) / 500),  # Adjust for restaurant price level
+                            is_veg=1 if item_data.get("is_veg", True) else 0,
+                            is_bestseller=1 if random.random() > 0.8 else 0,
+                            is_chef_special=1 if random.random() > 0.9 else 0,
+                            spice_level=random.randint(1, 4),
+                            prep_time_mins=item_data.get("prep_time", 15),
+                            serves=1,
+                            image_url=random.choice(images),
+                            available_for_preorder=1,
+                            is_available=1
+                        )
+                        db.add(item)
+                        menu_items_created += 1
+            
+            if restaurants_created % 500 == 0:
+                db.commit()
+                
+        except Exception as e:
+            print(f"Error processing restaurant {idx}: {e}")
+            continue
+    
+    db.commit()
+    
+    return {
+        "message": "Restaurant data seeded successfully",
+        "restaurants": restaurants_created,
+        "tables": tables_created,
+        "menu_items": menu_items_created
+    }
+
+
+# Register restaurant router
+app.include_router(restaurant_router)
 
 
 # =============================

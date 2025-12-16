@@ -10,6 +10,9 @@ const Receipt = () => {
   const { state } = useLocation();
   const [ipAddress, setIpAddress] = useState(null);
   
+  // Debug: log what Receipt receives
+  console.log('Receipt received state:', state);
+  
   const receiptUrl = state?.receiptUrl || null;
   const ticketUrl = state?.ticketUrl || null;
   const booking = state?.booking || null;
@@ -18,6 +21,10 @@ const Receipt = () => {
   const serviceType = state?.serviceType || 'Flight';
   const payment = state?.payment || null;
   const serviceDetails = state?.serviceDetails || booking?.service_details || {};
+  const amount = state?.amount || payment?.amount || booking?.amount || booking?.total_price || 0;
+  
+  // Debug
+  console.log('Receipt extracted - amount:', amount, 'serviceDetails:', serviceDetails);
 
   useEffect(() => {
     // Get IP address for QR code sharing
@@ -72,18 +79,29 @@ const Receipt = () => {
           {/* View Ticket in-app - Updated to pass full data */}
           <Button 
             className="w-full max-w-sm h-12 bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700" 
-            onClick={() => navigate('/ticket', { 
-              state: { 
-                booking: {
-                  ...booking,
-                  service_details: serviceDetails || booking?.service_details,
-                  service_type: serviceType
-                },
-                passenger: payer,
-                payment: payment,
-                serviceType: serviceType
-              } 
-            })}
+            onClick={() => {
+              console.log('Navigating to ticket with amount:', amount, 'serviceDetails:', serviceDetails);
+              navigate('/ticket', { 
+                state: { 
+                  booking: {
+                    ...booking,
+                    service_details: serviceDetails || booking?.service_details,
+                    service_type: serviceType,
+                    amount: amount,
+                    total_price: amount
+                  },
+                  passenger: payer,
+                  payment: {
+                    ...payment,
+                    amount: amount,
+                    method: payer?.method || payment?.method
+                  },
+                  serviceType: serviceType,
+                  serviceDetails: serviceDetails,
+                  amount: amount
+                } 
+              });
+            }}
           >
             <Ticket className="w-5 h-5 mr-2" /> View E‑Ticket
           </Button>

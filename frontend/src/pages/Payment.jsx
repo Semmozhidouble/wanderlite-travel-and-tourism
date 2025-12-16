@@ -299,12 +299,19 @@ const Payment = () => {
               ...booking,
               booking_ref: res.data.booking_ref,
               service_details: serviceDetails,
-              service_type: serviceType
+              service_type: serviceType,
+              amount: paymentAmount,
+              total_price: paymentAmount
             },
             payer: { ...form },
-            payment: res.data,
+            payment: {
+              ...res.data,
+              amount: paymentAmount,
+              method: form.method
+            },
             serviceType,
-            serviceDetails
+            serviceDetails,
+            amount: paymentAmount
           } 
         });
       }

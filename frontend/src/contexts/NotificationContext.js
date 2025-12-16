@@ -142,20 +142,21 @@ export const NotificationProvider = ({ children }) => {
       };
 
       wsRef.current.onclose = (event) => {
-        console.log('WebSocket disconnected:', event.code, event.reason);
         setIsConnected(false);
         
-        // Attempt to reconnect if not a normal close
-        if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts) {
+        // Only attempt to reconnect a few times silently
+        if (event.code !== 1000 && reconnectAttempts.current < 3) {
           reconnectAttempts.current += 1;
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-          console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current})`);
+          const delay = Math.min(5000 * reconnectAttempts.current, 15000);
           reconnectTimeoutRef.current = setTimeout(connectWebSocket, delay);
         }
       };
 
       wsRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        // Silently handle WebSocket errors - notifications are not critical
+        if (process.env.NODE_ENV === 'development') {
+          console.log('WebSocket connection unavailable - notifications disabled');
+        }
       };
 
       // Send ping every 25 seconds to keep connection alive
