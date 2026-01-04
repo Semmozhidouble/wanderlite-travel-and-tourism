@@ -315,4 +315,53 @@ MIT License - see LICENSE file for details
 
 ---
 
+## 🧪 Development: Running both services (dev mode) 🔧
+
+- **Option A — Cross-platform (recommended):**
+  - Ensure Node.js (16+) and npm are installed.
+  - From the repo root:
+    - Install dependencies:
+      - Backend: `cd backend && .venv\Scripts\python.exe -m pip install -r requirements.txt`
+      - Frontend: `cd frontend && npm install`
+    - Start both services (requires Node):
+      ```bash
+      # from repo root
+      npm run dev
+      ```
+      This uses the root `dev` script which runs both `start:backend` and `start:frontend` with `concurrently`.
+  - Or use the Python runner (no npm package needed to run both, but front-end still requires Node to work):
+    ```bash
+    python scripts/run_dev.py
+    ```
+
+- **Option B — Windows helper scripts:**
+  - PowerShell: `.	ools\start-dev.ps1` — or run `.	ools\start-dev.ps1` from PowerShell.
+  - CMD: `.	ools\start-dev.bat` — or double-click to open two windows (backend and frontend).
+
+**Quick notes:**
+- If `npm` is not on PATH, install Node.js: https://nodejs.org/en/download/.
+- `Makefile` targets: `make install`, `make start-backend`, `make start-frontend`, `make dev` (Windows users can use the scripts in `scripts/`).
+
+## 🔍 WebSocket & Notifications (dev)
+
+- To enable verbose raw WS logging in the frontend (dev only): set `REACT_APP_VERBOSE_WS=true` in `frontend/.env` and open browser devtools console — the NotificationContext will print raw messages as `[WS raw] ...`.
+- There's a small E2E helper at `backend/scripts/e2e_ws_notification_test.py` which:
+  1. Ensures a test user (`ws-test@example.com`) and admin (`ws-admin@example.com`) exist in the local sqlite DB, creating them if necessary.
+  2. Connects as the test user via WebSocket, then calls the admin notification API to send a targeted notification and confirms the client receives it.
+- Run it locally (backend venv):
+```bash
+# from repo root
+.c:/Users/semmo/Downloads/wanderlite-travel-and-tourism/.venv/Scripts/python.exe backend/scripts/e2e_ws_notification_test.py
+```
+
+## 🧪 Automated health check (HTTP + WS)
+
+- A convenience script `scripts/health_check.py` performs a quick HTTP check against `/api/status` and opens a temporary WebSocket (signed JWT) to ensure WS connections are accepted and the server responds to ping/heartbeat messages.
+- Run:
+```bash
+python scripts/health_check.py
+```
+
+---
+
 **Built with ❤️ for travelers worldwide**

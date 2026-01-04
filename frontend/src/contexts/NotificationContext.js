@@ -110,6 +110,11 @@ export const NotificationProvider = ({ children }) => {
       };
 
       wsRef.current.onmessage = (event) => {
+        // Dev: log raw message when verbose mode is enabled
+        if (process.env.REACT_APP_VERBOSE_WS === 'true') {
+          console.debug('[WS raw]', event.data);
+        }
+
         try {
           const data = JSON.parse(event.data);
           
